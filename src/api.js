@@ -45,7 +45,7 @@ export function rateLimiter(limit, windowMs) {
   };
 }
 
-export function createAuth({ config, db, users, live }) {
+export function createAuth({ config, db, users, live, settings, access }) {
   const lastSeenWrite = new Map();
   return async function auth(req, res, next) {
     try {
@@ -67,6 +67,8 @@ export function createAuth({ config, db, users, live }) {
         return res.status(401).json({ error: 'unauthorized' });
       }
       if (user.is_banned) return res.status(403).json({ error: 'banned' });
+      // maintenance (the main admin's switch): only the main admin gets in
+      if (settings.get('maintenance') && !(user.is_admin && access.isMain(user.id))) return res.status(403).json({ error: 'maintenance' });
       req.user = user;
       live.touch(user.id);
       const now = Date.now();
@@ -115,10 +117,11 @@ export function createApi(deps) {
 
   r.get('/health', (req, res) => res.json({ ok: true, bot: tg.botUsername || null }));
 
-  // public: any site may read it (the old BrainrotSpin page links to this bot)
+  // public: any site may read it (the old BrainrotSpin page links to this bot); the maintenance screen
+  // asks it whether the maintenance is over
   r.get('/public', (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
-    res.json({ bot: tg.botUsername || null, webUrl: config.webUrl || null });
+    res.json({ bot: tg.botUsername || null, webUrl: config.webUrl || null, maintenance: !!settings.get('maintenance') });
   });
 
   r.get('/feed', (req, res) => res.json(live.snapshot()));

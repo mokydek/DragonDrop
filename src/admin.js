@@ -75,7 +75,7 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
   // ------------------------------------------------------------ overview
   r.get(
     '/overview',
-    wrap(async () => {
+    wrap(async (req) => {
       const s = await db.one(`
         SELECT (SELECT count(*)::int FROM bs_users) AS users,
                (SELECT count(*)::int FROM bs_users WHERE created_at > now() - interval '24 hours') AS new24,
@@ -83,7 +83,20 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
                (SELECT count(*)::int FROM bs_upgrades WHERE created_at > now() - interval '24 hours') AS upgrades24,
                (SELECT coalesce(sum(balance), 0)::bigint FROM bs_users) AS coins,
                (SELECT coalesce(sum(i.value), 0)::bigint FROM bs_inventory v JOIN bs_items i ON i.id = v.item_id) AS items_value`);
-      return { ...s, online: live.online() };
+      // the main admin also gets the maintenance switch
+      return { ...s, online: live.online(), ...(isMain(req.user) ? { maintenance: !!settings.get('maintenance') } : {}) };
+    }),
+  );
+
+  // maintenance: nobody but the main admin gets into the bot and the app (the main admin's switch)
+  r.put(
+    '/maintenance',
+    wrap(async (req) => {
+      if (!isMain(req.user)) throw new GameError('forbidden', 403);
+      const on = (req.body || {}).on;
+      if (typeof on !== 'boolean') throw new GameError('bad_field', 400, { field: 'on' });
+      await settings.update({ maintenance: on });
+      return { maintenance: on };
     }),
   );
 
@@ -646,9 +659,9 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
 
   // ------------------------------------------------------------ settings
   // the Stars rate, the upgrader luck, what the other admins see, whether Stars count for referral
-  // codes, the referral levels, the auto promo code and the buffs on deposited brainrots are seen and
-  // changed by the main admin only; other admins don't get these fields
-  const OWNER_SETTINGS = ['stars_rate', 'upgrade_luck', 'admin_hidden', 'ref_count_stars', 'ref_levels', 'auto_promo', 'auto_promo_min', 'auto_promo_max', 'auto_promo_hours', 'buffs'];
+  // codes, the referral levels, the auto promo code, the buffs on deposited brainrots and the
+  // maintenance are seen and changed by the main admin only; other admins don't get these fields
+  const OWNER_SETTINGS = ['stars_rate', 'upgrade_luck', 'admin_hidden', 'ref_count_stars', 'ref_levels', 'auto_promo', 'auto_promo_min', 'auto_promo_max', 'auto_promo_hours', 'buffs', 'maintenance'];
   // the rest of the upgrader settings and the rocket ones: other admins see them, but only the main
   // admin changes them (the form always sends every field; only an actual change is refused, with
   // the generic error)

@@ -3141,6 +3141,67 @@ test('small phones (360px): no horizontal scrolling anywhere', { skip }, async (
   await page.context().close();
 });
 
+test('maintenance: only the main admin has the switch; players see one line and come back by themselves when it is over', { skip }, async () => {
+  const PLAYER = { id: 7301, first_name: 'Игрок', username: 'maint_player', language_code: 'ru' };
+  await demo.app.post('/api/bootstrap', { user: PLAYER });
+  await demo.app.setBalance(PLAYER.id, 1000);
+
+  // a usual admin: no switch in the overview
+  const mine = await open({ path: '/#/admin/overview' });
+  await mine.page.waitForSelector('.adm-stats');
+  assert.equal(await mine.page.locator('#maintGate').count(), 0);
+  await mine.page.context().close();
+
+  // the main admin: the switch at the top of the overview, off
+  const adm = await open({ user: BOSS, path: '/#/admin/overview' });
+  await adm.page.waitForSelector('.adm-stats');
+  assert.equal(await adm.page.isChecked('#maintGate'), false);
+  assert.equal(await adm.page.textContent('.maint-gate span'), 'Технические работы: выключены');
+  const above = await adm.page.evaluate(() => document.querySelector('.maint-gate').getBoundingClientRect().bottom <= document.querySelector('.adm-stats').getBoundingClientRect().top);
+  assert.ok(above, 'the switch is above the numbers');
+
+  // a player has the app open; the main admin switches the maintenance on
+  const pl = await open({ user: PLAYER });
+  await pl.page.waitForSelector('.case-grid');
+  await adm.page.click('.maint-gate');
+  await adm.page.waitForFunction(() => document.querySelector('.maint-gate span').textContent === 'Технические работы: включены');
+  assert.equal(await adm.page.isChecked('#maintGate'), true);
+  assert.equal(demo.app.ctx.settings.get('maintenance'), true);
+  await adm.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/maint-admin.png' });
+
+  // the player's next step: the app turns into one line (no tabs, no buttons)
+  await pl.page.click(`[data-case="${demo.bySlug.noob.id}"]`);
+  await pl.page.waitForSelector('[data-act="open"]');
+  await pl.page.click('[data-act="open"]');
+  await pl.page.waitForSelector('.splash-note');
+  assert.equal(await pl.page.textContent('.splash-note'), 'Технические работы — скоро вернёмся');
+  assert.equal(await pl.page.locator('#tabbar, .splash .btn, .modal-wrap').count(), 0);
+  // a player who opens the app now gets the same; in English for an English player
+  const late = await open({ user: { id: 7302, first_name: 'Late', language_code: 'en' } });
+  await late.page.waitForSelector('.splash-note');
+  assert.equal(await late.page.textContent('.splash-note'), 'Maintenance — back soon');
+  assert.equal(await late.page.locator('#tabbar, .splash .btn').count(), 0);
+  await late.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/maint-player.png' });
+  await late.page.context().close();
+
+  // the main admin still uses the app
+  await adm.page.reload();
+  await adm.page.waitForSelector('.adm-stats');
+  assert.equal(await adm.page.isChecked('#maintGate'), true);
+  assert.equal(await adm.page.locator('#tabbar').count(), 1);
+
+  // off: the player's app comes back by itself (it asks every 15 s), on the screen it was on
+  await adm.page.click('.maint-gate');
+  await adm.page.waitForFunction(() => document.querySelector('.maint-gate span').textContent === 'Технические работы: выключены');
+  assert.equal(demo.app.ctx.settings.get('maintenance'), false);
+  await pl.page.waitForSelector('#tabbar', { timeout: 25000 });
+  assert.equal(await pl.page.locator('.splash').count(), 0);
+  assert.equal(await pl.page.evaluate(() => location.hash), `#/case/${demo.bySlug.noob.id}`);
+  await pl.page.waitForSelector('[data-act="open"]');
+  await pl.page.context().close();
+  await adm.page.context().close();
+});
+
 test('no console errors in any UI test', { skip }, () => {
   assert.deepEqual(allErrors.flat(), []);
 });

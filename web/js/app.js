@@ -73,6 +73,7 @@ const S = {
   sound: store.getItem('bs_sound') !== '0', // sounds: coins when selling, the upgrader win (this device; on by default)
   streamer: store.getItem('bs_streamer') === '1', // streamer mode: balance, sums, own name / ID / Roblox nick and players' names hidden (this device)
   halloween: store.getItem('bs_hw') === '1', // Halloween look (admin switch); the last known state until the server answers
+  maintenance: false, // maintenance (the main admin's switch; the server says so): only the logo and one line
   timers: [],
 };
 window.__BS = S; // handy for debugging in the browser console
@@ -165,8 +166,41 @@ function errorText(e) {
 }
 
 function showError(e) {
+  if (e && e.code === 'maintenance') return showMaintenance();
   haptic.notify('error');
   toast(errorText(e), 'error');
+}
+
+/**
+ * Maintenance (the main admin's switch): the logo and one line, nothing else. Every 15 s it asks the
+ * server whether the maintenance is over and then starts the app again.
+ */
+let maintTimer = null;
+function showMaintenance() {
+  S.maintenance = true;
+  clearTimers();
+  closeModal();
+  try {
+    tg?.BackButton?.hide();
+  } catch {
+    /* not in Telegram */
+  }
+  render(
+    $('#app'),
+    html`<div class="splash">
+      <img class="splash-logo" src="img/logo.jpg" alt="" width="120" height="120">
+      <div class="splash-name">DragonDrop</div>
+      <div class="splash-note">${t('e.maintenance')}</div>
+    </div>`,
+  );
+  if (maintTimer) return;
+  maintTimer = setInterval(async () => {
+    try {
+      if ((await API.get('/public')).maintenance === false) location.reload();
+    } catch {
+      /* offline: ask again later */
+    }
+  }, 15000);
 }
 
 let modalClose = null;
@@ -396,6 +430,7 @@ function clearTimers() {
 
 let adminModule = null;
 async function renderView() {
+  if (S.maintenance) return;
   closePop();
   clearTimers();
   const r = route();
@@ -1875,8 +1910,8 @@ async function refreshMe() {
       if (route().view === 'profile' || (!partner && route().view === 'refs')) renderView();
     }
     updateHeader();
-  } catch {
-    /* ignore */
+  } catch (e) {
+    if (e && e.code === 'maintenance') showMaintenance(); // the maintenance began while the app was open
   }
 }
 
@@ -2775,6 +2810,7 @@ async function boot() {
       API.clearWebAuth();
       return showNoAuth();
     }
+    if (e.code === 'maintenance') return showMaintenance();
     render(
       $('#app'),
       html`<div class="splash">

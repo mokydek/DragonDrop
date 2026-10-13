@@ -30,7 +30,7 @@ export function scriptedRng() {
   };
 }
 
-export async function startApp({ dbName, env = {}, rng, now, autoPromoRng, prepare } = {}) {
+export async function startApp({ dbName, env = {}, rng, now, autoPromoRng, prepare, maintenance = false } = {}) {
   const tg = await startMockTelegram();
   const databaseUrl = await freshDatabase(dbName);
   if (prepare) await prepare(databaseUrl); // e.g. tables left by another project
@@ -49,6 +49,8 @@ export async function startApp({ dbName, env = {}, rng, now, autoPromoRng, prepa
     { rng, now, autoPromoRng },
   );
   await ctx.start(0);
+  // a new DragonDrop starts under maintenance (until the main admin opens it); tests start it open
+  if (!maintenance) await ctx.settings.update({ maintenance: false });
   const base = `http://127.0.0.1:${ctx.port}`;
 
   const auth = (user) => `tma ${buildInitData(user, BOT_TOKEN)}`;

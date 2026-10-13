@@ -925,6 +925,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .grid3 .full { grid-column: 1 / -1; }
 .dep-gate { margin: 0 2px 12px; }
 .dep-gate.closed span { color: #ff9a9a; }
+.maint-gate { margin: 0 2px 12px; }
+.maint-gate.on span { color: #ff9a9a; }
 .lvl-rows { display: grid; gap: 6px; }
 .lvl-row { display: grid; grid-template-columns: 46px 1fr 1fr 30px; align-items: end; gap: 8px; }
 .lvl-row .lvl-n { padding-bottom: 11px; font-size: 13px; font-weight: 900; }
