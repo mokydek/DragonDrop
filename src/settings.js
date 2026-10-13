@@ -10,6 +10,9 @@ export const SETTINGS_SCHEMA = {
   news_url: { ...url, def: '' }, // "News" button in /start (falls back to channel_url)
   support_url: { ...url, def: '' }, // "Support" button in /start
   halloween: { type: 'boolean', def: false }, // Halloween look for every player: app decorations, the Halloween case first, bot /start and shares
+  // maintenance (main admin's switch): nobody but the main admin gets into the bot and the app, the
+  // others see "maintenance". A new DragonDrop starts with it on, until the main admin opens it.
+  maintenance: { type: 'boolean', def: true },
   free_cooldown_hours: { type: 'number', min: 1, max: 720, def: 24 },
   free_require_sub: { type: 'boolean', def: true },
   free_require_share: { type: 'boolean', def: true },

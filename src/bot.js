@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Bot, InputFile, webhookCallback } from 'grammy';
 import { signWebToken } from './auth.js';
 import { GameError } from './game.js';
-import { LANGS, T } from './texts.js';
+import { LANGS, T, pickLang } from './texts.js';
 import { MSG_MAX } from './requests.js';
 
 export const ALLOWED_UPDATES = ['message', 'callback_query', 'my_chat_member', 'pre_checkout_query'];
@@ -71,6 +71,22 @@ export function createBot({ config, db, settings, game, users, live, paths, requ
   bot.use(async (ctx, next) => {
     if (ctx.from && !ctx.from.is_bot) live.touch(ctx.from.id);
     await next();
+  });
+
+  // Maintenance (the main admin's switch): the main admin uses the bot as usual, everyone else gets
+  // one line. Payments still go through (an invoice made before the maintenance).
+  const isMainAdmin = (u) => !!u && u.is_admin && (users.isOwnerId(u.id) || !users.hasOwner());
+  bot.use(async (ctx, next) => {
+    if (!settings.get('maintenance') || !ctx.from || ctx.from.is_bot) return next();
+    if (ctx.preCheckoutQuery || ctx.myChatMember || ctx.message?.successful_payment) return next();
+    if (ctx.chat?.type !== 'private') return next();
+    // /start keeps the player (to tell them when it is over); anything else only looks the player up
+    const start = /^\/start(@\w+)?(\s|$)/i.test(ctx.message?.text || '');
+    const u = start ? await users.upsertFromTelegram(ctx.from, { started: true }) : await users.ensureUser(ctx.from.id);
+    if (isMainAdmin(u)) return next();
+    const t = T(u ? u.lang : pickLang(ctx.from.language_code));
+    if (ctx.callbackQuery) return ctx.answerCallbackQuery({ text: t.maintenance }).catch(() => {});
+    if (ctx.message) await ctx.reply(t.maintenance);
   });
 
   bot.command('start', async (ctx) => {
