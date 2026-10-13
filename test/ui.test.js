@@ -2396,7 +2396,7 @@ test('Halloween: an admin switches it on — night sky, webs, spider, pumpkin by
     await p2.page.waitForSelector('.case-grid');
     assert.equal(await isOn(p2.page), false);
     for (const sel of deco) assert.equal(await shown(p2.page, sel), false, sel);
-    assert.equal(await bg1(p2.page), '#03131f', 'the sunset theme sky');
+    assert.equal(await bg1(p2.page), '#0c0a0b', 'the sunset theme: obsidian');
     assert.equal((await p2.page.locator('.case-name').allTextContents())[0], 'DragonDrop в нике');
     assert.equal(await p2.page.evaluate(() => localStorage.getItem('bs_hw')), '0');
     assert.deepEqual(p2.errors, []);

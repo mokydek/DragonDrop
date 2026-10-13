@@ -8,7 +8,8 @@ import { fireworks } from './fireworks.js';
 
 // ------------------------------------------------------------------ themes
 export const THEMES = {
-  sunset: { a1: '#FFD23F', a2: '#FF7A1A', on: '#1d1300', bg1: '#03131f', bg2: '#0a2c4a', bubble: '170,225,255' },
+  // the DragonDrop look: dragon gold on obsidian, embers from the lava glow
+  sunset: { a1: '#FFD23F', a2: '#FF7A1A', on: '#1d1300', bg1: '#0c0a0b', bg2: '#2a1509', bubble: '255,168,64' },
   graphite: { a1: '#E9EBEF', a2: '#8E96A3', on: '#0b0c0e', bg1: '#08090b', bg2: '#1d2027', bubble: '225,230,240' },
   mint: { a1: '#34F5A4', a2: '#1E90FF', on: '#00140d', bg1: '#02151a', bg2: '#05364a', bubble: '140,255,225' },
   redblue: { a1: '#FF4D6D', a2: '#3B82F6', on: '#ffffff', bg1: '#070a1c', bg2: '#0e2257', bubble: '185,200,255' },
@@ -104,6 +105,8 @@ function applyTheme(name, { save = false } = {}) {
   r.setProperty('--a1-soft', rgba(th.a1, 0.18));
   r.setProperty('--a2-soft', rgba(th.a2, 0.18));
   r.setProperty('--a1-glow', rgba(th.a1, 0.45));
+  r.setProperty('--a1-faint', rgba(th.a1, 0.07)); // the dragon scales in the background
+  r.setProperty('--a2-glow', rgba(th.a2, 0.3)); // the lava glow at the bottom
   r.setProperty('--glass', rgba(th.bg1, 0.74));
   document.documentElement.dataset.theme = S.theme;
   setBubbleTint(th.bubble);

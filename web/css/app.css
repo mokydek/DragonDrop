@@ -20,11 +20,14 @@
   --a1: #ffd23f;
   --a2: #ff7a1a;
   --on: #1d1300;
-  --bg1: #03131f;
-  --bg2: #0a2c4a;
-  --glass: rgba(3, 19, 31, 0.72);
+  --bg1: #0c0a0b;
+  --bg2: #2a1509;
+  --glass: rgba(12, 10, 11, 0.74);
   --a1-soft: rgba(255, 210, 63, 0.18);
   --a1-glow: rgba(255, 210, 63, 0.45);
+  --a1-faint: rgba(255, 210, 63, 0.07);
+  --a2-soft: rgba(255, 122, 26, 0.18);
+  --a2-glow: rgba(255, 122, 26, 0.3);
   --text: #f3f7fc;
   --muted: rgba(222, 234, 248, 0.62);
   --card: rgba(255, 255, 255, 0.06);
@@ -51,34 +54,50 @@ body {
   overflow-x: hidden;
   background: transparent;
 }
+/* the dragon's lair: obsidian, a warm haze at the top, the lava glow at the bottom */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -3;
   background:
-    radial-gradient(120% 55% at 50% -8%, var(--bg2) 0%, transparent 70%),
-    radial-gradient(80% 45% at 85% 110%, var(--a1-soft), transparent 70%),
-    linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 62%);
+    radial-gradient(75% 32% at 50% 106%, var(--a2-glow), transparent 72%),
+    radial-gradient(42% 24% at 6% 102%, var(--a2-soft), transparent 70%),
+    radial-gradient(42% 24% at 94% 102%, var(--a2-soft), transparent 70%),
+    radial-gradient(120% 48% at 50% -14%, var(--bg2), transparent 74%),
+    linear-gradient(180deg, var(--bg2) 0%, var(--bg1) 46%, var(--bg1) 100%);
   transition: background 0.4s;
 }
 #bubbles { position: fixed; inset: 0; z-index: -2; pointer-events: none; }
+/* dragon scales, faint, fading down the screen; the lava glow breathes under them */
 .rays-bg {
   position: fixed;
-  top: -20vh;
-  left: 50%;
-  width: 160vw;
-  height: 80vh;
-  transform: translateX(-50%);
+  inset: 0 0 auto;
+  height: 72vh;
   z-index: -2;
   pointer-events: none;
-  opacity: 0.35;
-  background: repeating-linear-gradient(100deg, transparent 0 6%, rgba(255, 255, 255, 0.07) 7% 9%, transparent 10% 16%);
-  mask-image: linear-gradient(180deg, #000, transparent 85%);
-  -webkit-mask-image: linear-gradient(180deg, #000, transparent 85%);
-  animation: sway 14s ease-in-out infinite alternate;
+  background:
+    radial-gradient(circle at 50% 0, transparent 55%, var(--a1-faint) 57%, transparent 63%) 0 0 / 30px 20px,
+    radial-gradient(circle at 50% 0, transparent 55%, var(--a1-faint) 57%, transparent 63%) 15px 10px / 30px 20px;
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.45) 45%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.45) 45%, transparent 100%);
 }
-@keyframes sway { from { transform: translateX(-52%) skewX(-3deg); } to { transform: translateX(-48%) skewX(3deg); } }
+body::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40vh;
+  z-index: -3;
+  pointer-events: none;
+  background: radial-gradient(62% 72% at 50% 100%, var(--a2-soft), transparent 70%);
+  animation: lava 6s ease-in-out infinite alternate;
+}
+@keyframes lava { from { opacity: 0.5; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none; }
+}
 
 button, input, select, textarea { font-family: inherit; }
 button { cursor: pointer; }
@@ -1121,3 +1140,105 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ================================================================ the DragonDrop look
+   Dragon gold on obsidian: cards like dark stone with a warm edge, chests on glowing plinths, the main
+   buttons of gold with a sheen. The colour themes keep their accents; the default one is warm all over. */
+html[data-theme='sunset'] {
+  --text: #fff7ec;
+  --muted: rgba(255, 233, 205, 0.6);
+  --card: rgba(255, 236, 212, 0.05);
+  --card2: rgba(255, 236, 212, 0.1);
+  --line: rgba(255, 208, 140, 0.14);
+}
+
+/* header: a gold seam under it */
+.top { border-bottom-color: transparent; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3); }
+.top::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--a1-glow) 28%, var(--a2-glow) 72%, transparent); pointer-events: none; }
+.brand-name { filter: drop-shadow(0 0 12px var(--a1-soft)); }
+.bal { background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.28)); border-color: var(--a1-soft); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.bal .plus { box-shadow: 0 0 12px var(--a1-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+.icon-btn { background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.25)); }
+
+/* section headings: a small gold diamond */
+.sec-title::before { content: ''; width: 7px; height: 7px; flex: none; border-radius: 2px; transform: rotate(45deg); background: var(--grad); box-shadow: 0 0 10px var(--a1-glow); }
+
+/* stone surfaces */
+.stat, .p-card, .task, .slot, .cooldown, .row, .lvl, .lvl-next, .loot-row, .dep-row, .control, .ref-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.stat { background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.2)), var(--card); }
+.p-card { background: radial-gradient(120% 150% at 0% 0%, var(--a1-soft), transparent 52%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.22)); border-color: var(--a1-soft); }
+.avatar { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 18px var(--a1-glow); }
+
+/* live drops */
+.drop { background: radial-gradient(circle at 50% 30%, var(--rca), transparent 70%), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.32)); }
+.top24 { background: radial-gradient(120% 120% at 0% 0%, rgba(255, 210, 63, 0.24), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.35)); }
+
+/* auto promo code: a treasure note */
+.ap-card { border-color: var(--a1-soft); background: radial-gradient(120% 110% at 100% 0%, var(--a1-soft), transparent 58%), radial-gradient(90% 90% at 0% 100%, var(--a2-soft), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.38)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 30px rgba(0, 0, 0, 0.3); }
+.ap-box { background: rgba(0, 0, 0, 0.3); }
+
+/* the FREE case: green fire */
+.free-card { background: radial-gradient(130% 160% at 0% 50%, rgba(34, 197, 94, 0.32), transparent 58%), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.32)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 26px rgba(34, 197, 94, 0.14); }
+
+/* cases: chests on glowing plinths, in the case colour */
+.case-card {
+  border-radius: 22px;
+  border-color: var(--cca);
+  background:
+    radial-gradient(85% 55% at 50% 38%, var(--cca), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.34));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 26px rgba(0, 0, 0, 0.34);
+}
+.case-glow { left: 18%; right: 18%; top: 74px; height: 30px; border-radius: 50%; background: radial-gradient(closest-side, var(--cc), transparent); opacity: 0.55; filter: blur(3px); }
+.case-art { filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.5)); }
+.case-name { font-size: 15px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
+.case-price { background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.32)); border-color: rgba(255, 210, 63, 0.28); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+@media (hover: hover) {
+  .case-card:hover { border-color: var(--cc); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 14px 30px rgba(0, 0, 0, 0.4), 0 0 24px var(--cca); }
+}
+
+/* the case page: the strip in a dark slot with a gold needle */
+.vh-price { background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.3)); border-color: rgba(255, 210, 63, 0.28); }
+.roulette { background: radial-gradient(55% 90% at 50% 50%, var(--a1-faint), transparent), linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.32)); border-color: var(--line); box-shadow: inset 0 0 34px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+.r-tile, .item { background: radial-gradient(circle at 50% 30%, var(--rca), transparent 70%), linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.3)); }
+
+/* buttons: gold with a sheen */
+.btn { background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.16)), rgba(255, 255, 255, 0.04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.btn.primary { background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 52%), var(--grad); box-shadow: 0 10px 26px var(--a1-glow), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 0 rgba(0, 0, 0, 0.12); }
+.btn.primary.big { position: relative; overflow: hidden; isolation: isolate; }
+.btn.primary.big::after { content: ''; position: absolute; top: 0; bottom: 0; left: -45%; width: 32%; z-index: -1; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.42), transparent); transform: skewX(-18deg); animation: sheen 4.2s ease-in-out infinite; pointer-events: none; }
+.btn.primary.big:disabled::after { display: none; }
+@keyframes sheen { 0%, 62% { left: -45%; } 100% { left: 125%; } }
+.btn.ghost { background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.12)); }
+.seg { background: rgba(0, 0, 0, 0.34); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35); }
+.seg button.on { background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px var(--a1-soft); }
+.input { background: rgba(0, 0, 0, 0.38); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35); }
+
+/* the upgrader, the rocket and the dice: stages lit from below */
+.gauge-wrap::before { content: ''; position: absolute; inset: 18px; border-radius: 50%; box-shadow: 0 0 46px var(--a2-soft); pointer-events: none; }
+.g-bg { fill: rgba(0, 0, 0, 0.42); }
+.crash-stage, .dice-stage { background: radial-gradient(110% 80% at 50% 108%, var(--a2-soft), transparent 62%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.36)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 40px rgba(0, 0, 0, 0.4); }
+
+/* the tab bar */
+.tabbar { border-color: var(--a1-soft); box-shadow: 0 16px 38px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.tabbar button.on { box-shadow: 0 6px 18px var(--a1-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
+
+/* sheets, pop-ups, toasts */
+.sheet { box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.55), inset 0 1px 0 var(--a1-soft); }
+.pop { box-shadow: var(--shadow), inset 0 1px 0 var(--a1-soft); }
+.toast { background: linear-gradient(180deg, var(--bg2), var(--bg1)); }
+.tu-opt { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.result-art .emo { filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 26px var(--rc)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.primary.big::after { animation: none; display: none; }
+}
+/* the auto promo card, more compact: the cases show up sooner */
+.ap-card { padding: 12px 12px 12px 14px; }
+.ap-title { margin: 8px 0 10px; font-size: 17px; line-height: 1.15; }
+.ap-box { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto; grid-template-areas: 'left code bonus'; gap: 8px 12px; padding: 10px 12px; }
+.ap-cell b { font-size: 15px; }
+.ap-btns { margin-top: 10px; }
+.ap-btns .btn { min-height: 40px; }
