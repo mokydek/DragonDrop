@@ -3190,12 +3190,14 @@ test('maintenance: only the main admin has the switch; players see one line and 
   assert.equal(await adm.page.isChecked('#maintGate'), true);
   assert.equal(await adm.page.locator('#tabbar').count(), 1);
 
-  // off: the player's app comes back by itself (it asks every 15 s)
+  // off: the player's app comes back by itself (it asks every 15 s), on the screen it was on
   await adm.page.click('.maint-gate');
   await adm.page.waitForFunction(() => document.querySelector('.maint-gate span').textContent === 'Технические работы: выключены');
   assert.equal(demo.app.ctx.settings.get('maintenance'), false);
-  await pl.page.waitForSelector('.case-grid', { timeout: 25000 });
-  assert.equal(await pl.page.locator('#tabbar').count(), 1);
+  await pl.page.waitForSelector('#tabbar', { timeout: 25000 });
+  assert.equal(await pl.page.locator('.splash').count(), 0);
+  assert.equal(await pl.page.evaluate(() => location.hash), `#/case/${demo.bySlug.noob.id}`);
+  await pl.page.waitForSelector('[data-act="open"]');
   await pl.page.context().close();
   await adm.page.context().close();
 });
