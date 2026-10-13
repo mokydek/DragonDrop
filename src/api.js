@@ -4,6 +4,7 @@ import { GameError } from './game.js';
 import { LANGS } from './texts.js';
 import { THEMES } from './users.js';
 import { normRef } from './referrals.js';
+import { GATES, gatesState } from './access.js';
 
 /** Sends GameError / unexpected errors as { error } JSON. */
 export function sendError(res, e) {
@@ -109,11 +110,23 @@ export function createApi(deps) {
   const limitLight = rateLimiter(60, 10_000);
   // top-ups: coins for a Star; whether brainrot deposits are open (admins close them for a while); what
   // the buffs of a deposited brainrot add to its price
-  const topupState = () => ({
-    starsRate: settings.get('stars_rate'),
-    brainrotsOpen: settings.get('deposits_brainrots_open') !== false,
-    buffs: settings.get('buffs'),
-  });
+  const topupState = () => {
+    const open = settings.get(GATES.deposits) !== false; // top-ups as a whole (the main admin's switch)
+    return {
+      starsRate: settings.get('stars_rate'),
+      starsOpen: open,
+      brainrotsOpen: open && settings.get('deposits_brainrots_open') !== false,
+      buffs: settings.get('buffs'),
+    };
+  };
+  // what players can use now (the main admin closes a part for a while); top-ups are in topupState
+  const modes = () => {
+    const { deposits, ...rest } = gatesState(settings);
+    return rest;
+  };
+  // a closed part refuses the request before anything happens
+  const gate = (name, code) => (req, res, next) => (settings.get(GATES[name]) === false ? res.status(403).json({ error: code }) : next());
+  const casesGate = gate('cases', 'cases_closed');
 
   r.get('/health', (req, res) => res.json({ ok: true, bot: tg.botUsername || null }));
 
@@ -168,6 +181,7 @@ export function createApi(deps) {
         inventory: await game.inventory(u.id),
         bot: tg.botUsername || null,
         topup: topupState(),
+        modes: modes(),
         halloween: !!settings.get('halloween'),
         partner: await referrals.isPartner(u.id), // has a referral code of their own (the "Referrals" screen)
         links: {
@@ -209,6 +223,7 @@ export function createApi(deps) {
       share: game.shareState(req.user),
       partner: await referrals.isPartner(req.user.id),
       topup: topupState(),
+      modes: modes(),
     })),
   );
   // a partner's referral codes: level, stats and the players who came with them
@@ -229,11 +244,12 @@ export function createApi(deps) {
       dice: dice.publicConfig(),
       autoPromo: await autoPromo.publicState(req.user),
       topup: topupState(),
+      modes: modes(),
       halloween: !!settings.get('halloween'),
     })),
   );
 
-  r.post('/case/:id/open', auth, limitActions, wrap(async (req) => game.openCase(req.user, req.params.id, (req.body || {}).count)));
+  r.post('/case/:id/open', auth, casesGate, limitActions, wrap(async (req) => game.openCase(req.user, req.params.id, (req.body || {}).count)));
 
   // ------------------------------------------------------------ rocket (crash)
   const crashId = (req) => {
@@ -241,13 +257,13 @@ export function createApi(deps) {
     if (!Number.isSafeInteger(id) || id < 1) throw new GameError('bad_request');
     return id;
   };
-  r.post('/crash/start', auth, limitActions, wrap(async (req) => crash.start(req.user, req.body || {})));
+  r.post('/crash/start', auth, gate('crash', 'crash_closed'), limitActions, wrap(async (req) => crash.start(req.user, req.body || {})));
   r.get('/crash/active', auth, limitLight, wrap(async (req) => ({ round: await crash.active(req.user) })));
   r.post('/crash/:id/cashout', auth, limitActions, wrap(async (req) => crash.cashout(req.user, crashId(req))));
   r.post('/crash/:id/wait', auth, limitLight, wrap(async (req) => crash.wait(req.user, crashId(req))));
 
   // ------------------------------------------------------------ colour dice
-  r.post('/dice/roll', auth, limitActions, wrap(async (req) => dice.roll(req.user, req.body || {})));
+  r.post('/dice/roll', auth, gate('dice', 'dice_closed'), limitActions, wrap(async (req) => dice.roll(req.user, req.body || {})));
 
   r.post(
     '/free/check',
@@ -292,15 +308,15 @@ export function createApi(deps) {
     }),
   );
 
-  r.post('/free/open', auth, limitActions, wrap(async (req) => game.openFree(req.user)));
+  r.post('/free/open', auth, casesGate, limitActions, wrap(async (req) => game.openFree(req.user)));
   // the nick case: Telegram is asked for the player's current name (req.tgUser is the signed fallback)
-  r.post('/nick/open', auth, limitActions, wrap(async (req) => game.openNick(req.user, req.tgUser)));
+  r.post('/nick/open', auth, casesGate, limitActions, wrap(async (req) => game.openNick(req.user, req.tgUser)));
   // the share case: opens after share_case_count shares of the bot (counted by /free/shared)
-  r.post('/share/open', auth, limitActions, wrap(async (req) => game.openShare(req.user)));
+  r.post('/share/open', auth, casesGate, limitActions, wrap(async (req) => game.openShare(req.user)));
 
   r.post('/sell', auth, limitActions, wrap(async (req) => game.sell(req.user.id, req.body || {})));
 
-  r.post('/upgrade', auth, limitActions, wrap(async (req) => game.upgrade(req.user, req.body || {})));
+  r.post('/upgrade', auth, gate('upgrade', 'upgrade_closed'), limitActions, wrap(async (req) => game.upgrade(req.user, req.body || {})));
 
   r.post('/promo', auth, limitActions, wrap(async (req) => game.redeemPromo(req.user.id, (req.body || {}).code)));
 
@@ -334,6 +350,7 @@ export function createApi(deps) {
   r.post(
     '/topup/stars',
     auth,
+    gate('deposits', 'topup_closed'),
     limitActions,
     wrap(async (req) => {
       const b = req.body || {};
@@ -345,6 +362,7 @@ export function createApi(deps) {
   r.post(
     '/requests/deposit',
     auth,
+    gate('deposits', 'topup_closed'),
     limitActions,
     wrap(async (req) => {
       const b = req.body || {};
@@ -352,7 +370,7 @@ export function createApi(deps) {
       return { ...(await requests.createDeposit(req.user, b, promo)), ref };
     }),
   );
-  r.post('/requests/withdraw', auth, limitActions, wrap(async (req) => requests.createWithdraw(req.user, req.body || {})));
+  r.post('/requests/withdraw', auth, gate('withdrawals', 'withdrawals_closed'), limitActions, wrap(async (req) => requests.createWithdraw(req.user, req.body || {})));
 
   return { router: r, auth };
 }

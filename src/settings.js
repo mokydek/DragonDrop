@@ -13,6 +13,13 @@ export const SETTINGS_SCHEMA = {
   // maintenance (main admin's switch): nobody but the main admin gets into the bot and the app, the
   // others see "maintenance". A new DragonDrop starts with it on, until the main admin opens it.
   maintenance: { type: 'boolean', def: true },
+  // what players can use (the main admin closes a part for a while; see GATES in access.js)
+  cases_open: { type: 'boolean', def: true },
+  upgrade_open: { type: 'boolean', def: true },
+  crash_open: { type: 'boolean', def: true },
+  dice_open: { type: 'boolean', def: true },
+  withdrawals_open: { type: 'boolean', def: true },
+  deposits_open: { type: 'boolean', def: true },
   free_cooldown_hours: { type: 'number', min: 1, max: 720, def: 24 },
   free_require_sub: { type: 'boolean', def: true },
   free_require_share: { type: 'boolean', def: true },
