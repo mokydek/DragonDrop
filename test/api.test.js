@@ -40,7 +40,7 @@ test('health and public endpoints', async () => {
   assert.equal(h.body.bot, 'DragonDrop_Bot');
   // the bot name is public: any site may read it (the old BrainrotSpin page links to this bot)
   const p = await app.call('GET', '/api/public', { headers: { Origin: 'https://brainrotspin.onrender.com' } });
-  assert.deepEqual(p.body, { bot: 'DragonDrop_Bot', webUrl: 'https://app.dragondrop.test' });
+  assert.deepEqual(p.body, { bot: 'DragonDrop_Bot', webUrl: 'https://app.dragondrop.test', maintenance: false });
   assert.equal(p.headers.get('access-control-allow-origin'), '*');
   const f = await app.get('/api/feed');
   assert.deepEqual(Object.keys(f.body).sort(), ['feed', 'online', 'top24']);
