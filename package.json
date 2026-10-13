@@ -1,0 +1,23 @@
+{
+  "name": "dragondrop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DragonDrop — Telegram bot + Mini App: cases and upgrader for Steal a Brainrot (virtual coins only)",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "BOT_MODE=polling node src/server.js",
+    "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
+    "economy": "node scripts/design-economy.mjs",
+    "build:web": "node scripts/build-web-config.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "grammy": "^1.46.0",
+    "pg": "^8.23.0"
+  }
+}

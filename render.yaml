@@ -1,0 +1,33 @@
+# Render Blueprint: API + bot (web service) and the Mini App (static site, never sleeps).
+services:
+  - type: web
+    name: dragondrop-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_CODE
+        generateValue: true
+      - key: WEB_URL
+        value: https://dragondrop.onrender.com
+  - type: web
+    runtime: static
+    name: dragondrop
+    buildCommand: node scripts/build-web-config.mjs
+    staticPublishPath: ./web
+    envVars:
+      - key: API_URL
+        value: https://dragondrop-api.onrender.com
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
