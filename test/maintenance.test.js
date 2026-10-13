@@ -47,7 +47,7 @@ test('a new DragonDrop starts under maintenance: players and usual admins are ke
   assert.equal(me.body.me.isAdmin, true);
   const o = await app.get('/api/admin/overview', { user: boss });
   assert.equal(o.status, 200);
-  assert.equal(o.body.maintenance, true);
+  assert.equal(o.body.control.maintenance, true);
 
   // public bits still answer: the maintenance screen asks /api/public whether it is over
   const pub = await app.get('/api/public');
@@ -132,7 +132,7 @@ test('only the main admin switches it: off lets everyone in, a usual admin canno
   // a usual admin: no switch in the overview, the switch and the settings field are refused
   const o = await app.get('/api/admin/overview', { user: helper });
   assert.equal(o.status, 200);
-  assert.equal(o.body.maintenance, undefined);
+  assert.equal(o.body.control, undefined);
   const no = await app.put('/api/admin/maintenance', { user: helper, body: { on: true } });
   assert.equal(no.status, 403);
   assert.equal(no.body.error, 'forbidden');

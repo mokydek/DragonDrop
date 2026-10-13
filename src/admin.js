@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { GameError, displayName } from './game.js';
 import { RARITIES, rarityOf } from './rarity.js';
 import { wrap } from './api.js';
+import { GATES, gatesState } from './access.js';
 import { meView } from './api.js';
 
 function int(v, min, max, field) {
@@ -83,12 +84,14 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
                (SELECT count(*)::int FROM bs_upgrades WHERE created_at > now() - interval '24 hours') AS upgrades24,
                (SELECT coalesce(sum(balance), 0)::bigint FROM bs_users) AS coins,
                (SELECT coalesce(sum(i.value), 0)::bigint FROM bs_inventory v JOIN bs_items i ON i.id = v.item_id) AS items_value`);
-      // the main admin also gets the maintenance switch
-      return { ...s, online: live.online(), ...(isMain(req.user) ? { maintenance: !!settings.get('maintenance') } : {}) };
+      // the main admin also gets the controls: the maintenance and what players can use
+      const control = isMain(req.user) ? { control: { maintenance: !!settings.get('maintenance'), gates: gatesState(settings) } } : {};
+      return { ...s, online: live.online(), ...control };
     }),
   );
 
-  // maintenance: nobody but the main admin gets into the bot and the app (the main admin's switch)
+  // ------------------------------------------------------------ controls (the main admin)
+  // maintenance: nobody but the main admin gets into the bot and the app
   r.put(
     '/maintenance',
     wrap(async (req) => {
@@ -97,6 +100,39 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
       if (typeof on !== 'boolean') throw new GameError('bad_field', 400, { field: 'on' });
       await settings.update({ maintenance: on });
       return { maintenance: on };
+    }),
+  );
+
+  // close / open a part for every player: cases, upgrader, rocket, dice, withdrawals, top-ups
+  r.put(
+    '/gates',
+    wrap(async (req) => {
+      if (!isMain(req.user)) throw new GameError('forbidden', 403);
+      const { gate, open } = req.body || {};
+      if (typeof gate !== 'string' || !Object.hasOwn(GATES, gate)) throw new GameError('bad_field', 400, { field: 'gate' });
+      if (typeof open !== 'boolean') throw new GameError('bad_field', 400, { field: 'open' });
+      await settings.update({ [GATES[gate]]: open });
+      return { gates: gatesState(settings) };
+    }),
+  );
+
+  // every balance and every inventory back to zero. Rockets in flight burn (nothing comes back from
+  // them); the history (drops, upgrades, the balance log) and the deposit / withdrawal requests stay.
+  r.post(
+    '/reset-economy',
+    wrap(async (req) => {
+      if (!isMain(req.user)) throw new GameError('forbidden', 403);
+      if ((req.body || {}).confirm !== 'RESET') throw new GameError('bad_field', 400, { field: 'confirm' });
+      return db.tx(async (cl) => {
+        // every player row first: a case, an upgrade or a bet going on right now ends before the reset
+        await cl.query('SELECT id FROM bs_users ORDER BY id FOR UPDATE');
+        const sum = (await cl.query('SELECT count(*)::int AS n, coalesce(sum(balance), 0)::bigint AS coins FROM bs_users WHERE balance <> 0')).rows[0];
+        await cl.query("INSERT INTO bs_balance_log (user_id, delta, reason, admin_id) SELECT id, -balance, 'admin:reset', $1 FROM bs_users WHERE balance <> 0", [req.user.id]);
+        await cl.query('UPDATE bs_users SET balance = 0 WHERE balance <> 0');
+        const rockets = (await cl.query("UPDATE bs_crash SET status = 'crashed' WHERE status = 'flying'")).rowCount;
+        const items = (await cl.query('DELETE FROM bs_inventory')).rowCount;
+        return { users: sum.n, coins: Number(sum.coins), items, rockets };
+      });
     }),
   );
 
@@ -659,9 +695,13 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
 
   // ------------------------------------------------------------ settings
   // the Stars rate, the upgrader luck, what the other admins see, whether Stars count for referral
-  // codes, the referral levels, the auto promo code, the buffs on deposited brainrots and the
-  // maintenance are seen and changed by the main admin only; other admins don't get these fields
-  const OWNER_SETTINGS = ['stars_rate', 'upgrade_luck', 'admin_hidden', 'ref_count_stars', 'ref_levels', 'auto_promo', 'auto_promo_min', 'auto_promo_max', 'auto_promo_hours', 'buffs', 'maintenance'];
+  // codes, the referral levels, the auto promo code, the buffs on deposited brainrots, the
+  // maintenance and what players can use are seen and changed by the main admin only; other admins
+  // don't get these fields
+  const OWNER_SETTINGS = [
+    'stars_rate', 'upgrade_luck', 'admin_hidden', 'ref_count_stars', 'ref_levels', 'auto_promo', 'auto_promo_min', 'auto_promo_max', 'auto_promo_hours', 'buffs',
+    'maintenance', ...Object.values(GATES),
+  ];
   // the rest of the upgrader settings and the rocket ones: other admins see them, but only the main
   // admin changes them (the form always sends every field; only an actual change is refused, with
   // the generic error)

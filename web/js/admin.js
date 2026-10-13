@@ -80,22 +80,34 @@ export function renderAdmin(view, route, ctx) {
 }
 
 // ------------------------------------------------------------------ overview
+// the main admin's controls: what players can use (the order of the switches)
+const GATE_KEYS = ['cases', 'upgrade', 'crash', 'dice', 'withdrawals', 'deposits'];
+
 async function overview(body) {
   const o = await C.API.get('/admin/overview');
   if (!body.isConnected) return;
   const keys = ['users', 'new24', 'online', 'opened24', 'upgrades24', 'coins', 'items_value'];
-  // maintenance: only the main admin gets the switch (nobody else gets into the bot and the app)
+  const ctl = o.control; // only the main admin gets the controls
   const maintText = (on) => C.t(on ? 'a.maintOn' : 'a.maintOff');
+  const gateText = (g, open) => C.t(`a.g.${g}.${open ? 'on' : 'off'}`);
   C.render(
     body,
-    h`${o.maintenance !== undefined
-      ? h`<label class="switch maint-gate${o.maintenance ? ' on' : ''}"><input type="checkbox" id="maintGate" ${o.maintenance ? C.raw('checked') : ''}><i></i><span>${maintText(o.maintenance)}</span></label>`
+    h`${ctl
+      ? h`<div class="control">
+          <label class="switch maint-gate${ctl.maintenance ? ' on' : ''}"><input type="checkbox" id="maintGate" ${ctl.maintenance ? C.raw('checked') : ''}><i></i><span>${maintText(ctl.maintenance)}</span></label>
+          ${GATE_KEYS.map(
+            (g) => h`<label class="switch gate${ctl.gates[g] ? '' : ' closed'}"><input type="checkbox" data-gate="${g}" ${ctl.gates[g] ? C.raw('checked') : ''}><i></i><span>${gateText(g, ctl.gates[g])}</span></label>`,
+          )}
+          <button type="button" class="btn small danger" id="resetAll">${C.t('a.resetAll')}</button>
+        </div>`
       : ''}
     <div class="stats adm-stats">${keys.map(
       (k) => h`<div class="stat"><div class="s-val">${k === 'coins' || k === 'items_value' ? C.money(o[k], 15) : C.fmt(o[k])}</div><div class="s-lbl">${C.t('a.st.' + k)}</div></div>`,
     )}</div>`,
   );
-  body.querySelector('#maintGate')?.addEventListener('change', async (e) => {
+  if (!ctl) return;
+  // maintenance: nobody but the main admin gets into the bot and the app
+  body.querySelector('#maintGate').addEventListener('change', async (e) => {
     const box = e.target;
     const on = box.checked;
     box.disabled = true;
@@ -110,6 +122,42 @@ async function overview(body) {
       adminError(err);
     } finally {
       box.disabled = false;
+    }
+  });
+  // close / open a part for every player
+  for (const box of body.querySelectorAll('[data-gate]')) {
+    box.addEventListener('change', async () => {
+      const g = box.dataset.gate;
+      const open = box.checked;
+      box.disabled = true;
+      try {
+        const r = await C.API.put('/admin/gates', { gate: g, open });
+        box.checked = r.gates[g];
+        box.closest('.gate').classList.toggle('closed', !r.gates[g]);
+        box.closest('.gate').querySelector('span').textContent = gateText(g, r.gates[g]);
+        C.toast(C.t('a.saved'), 'ok');
+      } catch (err) {
+        box.checked = !open;
+        adminError(err);
+      } finally {
+        box.disabled = false;
+      }
+    });
+  }
+  // every balance and every inventory back to zero
+  body.querySelector('#resetAll').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (btn.disabled || !(await C.confirmModal(C.t('a.resetConfirm')))) return;
+    btn.disabled = true;
+    try {
+      const r = await C.API.post('/admin/reset-economy', { confirm: 'RESET' });
+      C.toast(C.t('a.resetDone', { users: C.fmt(r.users), items: C.fmt(r.items) }), 'ok');
+      C.S.inventory = [];
+      await C.reloadMe();
+      if (body.isConnected) await overview(body);
+    } catch (err) {
+      adminError(err);
+      btn.disabled = false;
     }
   });
 }

@@ -15,6 +15,21 @@ export const ADMIN_SECTIONS = [
   'broadcast',
 ];
 
+/**
+ * What the main admin can close for a while, and the setting behind each: the cases (FREE and the
+ * other free ones too), the upgrader, the rocket, the dice, withdrawals and top-ups (Stars and brainrots).
+ */
+export const GATES = {
+  cases: 'cases_open',
+  upgrade: 'upgrade_open',
+  crash: 'crash_open',
+  dice: 'dice_open',
+  withdrawals: 'withdrawals_open',
+  deposits: 'deposits_open',
+};
+/** Which of them are open now: { cases: true, … }. */
+export const gatesState = (settings) => Object.fromEntries(Object.entries(GATES).map(([g, key]) => [g, settings.get(key) !== false]));
+
 /** The section a deposit / withdrawal request belongs to. */
 export const requestSection = (r) => (r.kind === 'withdraw' ? 'withdrawals' : r.method === 'stars' ? 'deposits_stars' : 'deposits_brainrots');
 
