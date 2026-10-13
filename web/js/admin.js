@@ -84,12 +84,34 @@ async function overview(body) {
   const o = await C.API.get('/admin/overview');
   if (!body.isConnected) return;
   const keys = ['users', 'new24', 'online', 'opened24', 'upgrades24', 'coins', 'items_value'];
+  // maintenance: only the main admin gets the switch (nobody else gets into the bot and the app)
+  const maintText = (on) => C.t(on ? 'a.maintOn' : 'a.maintOff');
   C.render(
     body,
-    h`<div class="stats adm-stats">${keys.map(
+    h`${o.maintenance !== undefined
+      ? h`<label class="switch maint-gate${o.maintenance ? ' on' : ''}"><input type="checkbox" id="maintGate" ${o.maintenance ? C.raw('checked') : ''}><i></i><span>${maintText(o.maintenance)}</span></label>`
+      : ''}
+    <div class="stats adm-stats">${keys.map(
       (k) => h`<div class="stat"><div class="s-val">${k === 'coins' || k === 'items_value' ? C.money(o[k], 15) : C.fmt(o[k])}</div><div class="s-lbl">${C.t('a.st.' + k)}</div></div>`,
     )}</div>`,
   );
+  body.querySelector('#maintGate')?.addEventListener('change', async (e) => {
+    const box = e.target;
+    const on = box.checked;
+    box.disabled = true;
+    try {
+      const r = await C.API.put('/admin/maintenance', { on });
+      box.checked = r.maintenance;
+      box.closest('.maint-gate').classList.toggle('on', r.maintenance);
+      box.closest('.maint-gate').querySelector('span').textContent = maintText(r.maintenance);
+      C.toast(C.t('a.saved'), 'ok');
+    } catch (err) {
+      box.checked = !on;
+      adminError(err);
+    } finally {
+      box.disabled = false;
+    }
+  });
 }
 
 // ------------------------------------------------------------------ cases
