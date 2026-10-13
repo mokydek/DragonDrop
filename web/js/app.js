@@ -61,6 +61,7 @@ const S = {
   bot: null,
   links: {},
   topup: { starsRate: 1 },
+  modes: { cases: true, upgrade: true, crash: true, dice: true, withdrawals: true }, // what the main admin left open
   mode: null, // 'tg' inside Telegram, 'web' on the website
   theme: 'sunset',
   busy: false,
@@ -165,10 +166,23 @@ function errorText(e) {
   return s === key ? t('e.default') : s;
 }
 
+// errors of a part the main admin closed -> the part (S.modes)
+const CLOSED_MODE = { cases_closed: 'cases', upgrade_closed: 'upgrade', crash_closed: 'crash', dice_closed: 'dice', withdrawals_closed: 'withdrawals' };
+
 function showError(e) {
   if (e && e.code === 'maintenance') return showMaintenance();
   haptic.notify('error');
   toast(errorText(e), 'error');
+  // closed while the screen was open: the screen shows it
+  const mode = e && CLOSED_MODE[e.code];
+  if (mode && S.modes[mode] !== false) {
+    S.modes = { ...S.modes, [mode]: false };
+    setTimeout(() => !S.busy && renderView(), 0);
+  }
+  if (e && e.code === 'topup_closed') {
+    S.topup = { ...S.topup, starsOpen: false, brainrotsOpen: false };
+    setTimeout(() => topupMenu(), 0);
+  }
 }
 
 /**
@@ -732,6 +746,7 @@ function cooldownRow(nextAt) {
 }
 
 function openButton(c) {
+  if (S.modes.cases === false) return html`<button class="btn primary big" disabled>${t('closedNow')}</button>`;
   if (noPrice(c)) {
     const st = freeOf(c) || {};
     if (st.nextAt && new Date(st.nextAt) > new Date()) return cooldownRow(st.nextAt);
@@ -1189,6 +1204,10 @@ function updateUpgrade() {
   );
   const btn = $('#upBtn');
   if (btn) btn.disabled = !(bet > 0 && target) || S.busy;
+  if (btn && S.modes.upgrade === false) {
+    btn.disabled = true;
+    btn.textContent = t('closedNow');
+  }
   if (!target) S.up.pct = null;
   const pcts = $('#upPcts');
   const lo = upRangeMin();
@@ -1367,6 +1386,7 @@ async function reloadCatalog() {
   if (r.dice) S.dice = r.dice;
   if ('autoPromo' in r) S.autoPromo = r.autoPromo;
   if (r.topup) S.topup = r.topup;
+  if (r.modes) S.modes = { ...S.modes, ...r.modes };
   if (typeof r.halloween === 'boolean') applyHalloween(r.halloween);
 }
 
@@ -1442,6 +1462,11 @@ function crashButton() {
   if (!btn) return;
   const flying = crashRun && !crashRun.done;
   btn.classList.toggle('cash', !!flying);
+  if (!flying && S.modes.crash === false) {
+    render(btn, html`${t('closedNow')}`);
+    btn.disabled = true;
+    return;
+  }
   if (flying) render(btn, html`${t('crash.cashout')} <span class="money">${coin(16)}<b id="crWin" class="priv">${fmt(crashRun.bet)}</b></span>`);
   else render(btn, html`${t('crash.start')}`);
   btn.disabled = !!(crashRun && crashRun.pending) || (!flying && (S.crashMode || 'coins') === 'brainrots' && crashSel.size === 0);
@@ -1693,7 +1718,12 @@ function diceBetValue() {
 
 function diceButton() {
   const btn = $('#dcBtn');
-  if (btn) btn.disabled = S.busy || ((S.diceMode || 'coins') === 'brainrots' && diceSel.size === 0);
+  if (!btn) return;
+  btn.disabled = S.busy || ((S.diceMode || 'coins') === 'brainrots' && diceSel.size === 0);
+  if (S.modes.dice === false && !S.busy) {
+    btn.disabled = true;
+    btn.textContent = t('closedNow');
+  }
 }
 
 async function diceGo() {
@@ -1802,7 +1832,9 @@ function viewProfile(view) {
     <div class="inv-head">
       <h3 class="sec-title">${t('inventory')} <span class="cnt">${S.inventory.length}</span>${S.inventory.length ? html` <span class="inv-sum">${money(invValue, 13)}</span>` : ''}</h3>
       ${S.inventory.length
-        ? html`<div class="inv-btns"><button class="btn small" data-act="withdraw">${t('withdraw')}</button><button class="btn small ghost" data-act="sell-all">${t('sellAll')}</button></div>`
+        ? html`<div class="inv-btns">${S.modes.withdrawals === false
+            ? html`<button class="btn small" disabled>${t('wdClosed')}</button>`
+            : html`<button class="btn small" data-act="withdraw">${t('withdraw')}</button>`}<button class="btn small ghost" data-act="sell-all">${t('sellAll')}</button></div>`
         : ''}
     </div>
     ${S.inventory.length
@@ -1904,6 +1936,11 @@ async function refreshMe() {
     S.nick = { ...S.nick, ...r.nick };
     S.share = { ...S.share, ...r.share };
     if (r.topup) S.topup = r.topup;
+    // a part closed or opened again by the main admin: the screen shows it at once
+    if (r.modes && JSON.stringify({ ...S.modes, ...r.modes }) !== JSON.stringify(S.modes)) {
+      S.modes = { ...S.modes, ...r.modes };
+      if (!S.busy) renderView();
+    }
     const partner = !!r.partner;
     if (partner !== S.partner) {
       S.partner = partner;
@@ -2011,7 +2048,9 @@ function topupMenu() {
     box,
     html`<div class="sheet-title">${t('topup')}</div>
     <div class="tu-opts">
-      <button type="button" class="tu-opt stars" data-act="tu-stars"><span class="tu-ico emo">⭐</span><b>${t('tu.stars')}</b></button>
+      ${S.topup.starsOpen === false
+        ? html`<button type="button" class="tu-opt stars closed" data-act="tu-stars" disabled><span class="tu-ico emo">⭐</span><b>${t('tu.stars')}</b><small>${t('tu.closed')}</small></button>`
+        : html`<button type="button" class="tu-opt stars" data-act="tu-stars"><span class="tu-ico emo">⭐</span><b>${t('tu.stars')}</b></button>`}
       ${S.topup.brainrotsOpen === false
         ? html`<button type="button" class="tu-opt brainrots closed" data-act="tu-brainrots" disabled><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b><small>${t('tu.closed')}</small></button>`
         : html`<button type="button" class="tu-opt brainrots" data-act="tu-brainrots"><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b></button>`}
@@ -2768,6 +2807,7 @@ function applyBootstrap(b) {
   S.links = b.links || {};
   S.partner = !!b.partner;
   if (b.topup) S.topup = b.topup;
+  if (b.modes) S.modes = { ...S.modes, ...b.modes };
   if (b.me.lang && b.me.lang !== lang() && !store.getItem('bs_lang')) setLang(b.me.lang);
   if (b.me.theme && !store.getItem('bs_theme')) applyTheme(b.me.theme);
 }
