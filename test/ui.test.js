@@ -3202,6 +3202,111 @@ test('maintenance: only the main admin has the switch; players see one line and 
   await adm.page.context().close();
 });
 
+test('controls: the main admin closes parts for every player and opens them again; a usual admin has no controls', { skip }, async () => {
+  const P = { id: 7321, first_name: 'Игрок', username: 'gate_player', language_code: 'ru' };
+  await demo.app.post('/api/bootstrap', { user: P });
+  await demo.app.setBalance(P.id, 1000);
+  await demo.app.post(`/api/case/${demo.bySlug.noob.id}/open`, { user: P }); // something in the inventory
+
+  // a usual admin: no controls
+  const mine = await open({ path: '/#/admin/overview' });
+  await mine.page.waitForSelector('.adm-stats');
+  assert.equal(await mine.page.locator('.control').count(), 0);
+  await mine.page.context().close();
+
+  // the main admin: the maintenance, six switches, all open, and the reset button
+  const adm = await open({ user: BOSS, path: '/#/admin/overview' });
+  await adm.page.waitForSelector('.control');
+  assert.deepEqual(await adm.page.locator('.control .gate span').allTextContents(), [
+    'Кейсы: открыты', 'Апгрейдер: открыт', 'Ракета: открыта', 'Дайсы: открыты', 'Выводы: открыты', 'Пополнения: открыты',
+  ]);
+  assert.equal(await adm.page.textContent('#resetAll'), 'Сбросить все деньги и инвентарь');
+
+  // the player's app is open on a case; the main admin closes the cases
+  const pl = await open({ user: P, path: `/#/case/${demo.bySlug.noob.id}` });
+  await pl.page.waitForSelector('[data-act="open"]');
+  await adm.page.click('.gate:has([data-gate="cases"])');
+  await adm.page.waitForFunction(() => document.querySelector('.gate:has([data-gate="cases"]) span').textContent === 'Кейсы: закрыты');
+  assert.equal(demo.app.ctx.settings.get('cases_open'), false);
+  // the player taps "open": the server says no, the button turns into "closed for now", the balance stays
+  await pl.page.click('[data-act="open"]');
+  await pl.page.waitForSelector('.toast.error');
+  assert.equal(await pl.page.textContent('.toast.error'), 'Кейсы временно закрыты');
+  await pl.page.waitForFunction(() => document.querySelector('#openRow .btn')?.textContent === 'Временно закрыто');
+  assert.equal(await pl.page.isDisabled('#openRow .btn'), true);
+  assert.equal(num(await pl.page.textContent('#bal')), 990);
+  await pl.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/gate-case.png' });
+  await pl.page.context().close();
+
+  // everything else closed too: a player who opens the app now sees every part closed
+  for (const g of ['upgrade', 'crash', 'dice', 'withdrawals', 'deposits']) {
+    await adm.page.click(`.gate:has([data-gate="${g}"])`);
+    await adm.page.waitForFunction((x) => document.querySelector(`.gate:has([data-gate="${x}"])`).classList.contains('closed'), g);
+  }
+  assert.deepEqual(await adm.page.locator('.control .gate span').allTextContents(), [
+    'Кейсы: закрыты', 'Апгрейдер: закрыт', 'Ракета: закрыта', 'Дайсы: закрыты', 'Выводы: закрыты', 'Пополнения: закрыты',
+  ]);
+  await adm.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/gate-admin.png' });
+  const p2 = await open({ user: P });
+  await p2.page.waitForSelector('.case-grid');
+  const closedBtn = async (sel) => [await p2.page.textContent(sel), await p2.page.isDisabled(sel)];
+  await p2.page.evaluate(() => (location.hash = '#/upgrade'));
+  await p2.page.waitForSelector('#upBtn');
+  assert.deepEqual(await closedBtn('#upBtn'), ['Временно закрыто', true]);
+  await p2.page.evaluate(() => (location.hash = '#/crash'));
+  await p2.page.waitForSelector('#crBtn');
+  assert.deepEqual(await closedBtn('#crBtn'), ['Временно закрыто', true]);
+  await p2.page.evaluate(() => (location.hash = '#/dice'));
+  await p2.page.waitForSelector('#dcBtn');
+  assert.deepEqual(await closedBtn('#dcBtn'), ['Временно закрыто', true]);
+  await p2.page.evaluate(() => (location.hash = '#/profile'));
+  await p2.page.waitForSelector('.inv-btns');
+  assert.equal(await p2.page.locator('[data-act="withdraw"]').count(), 0);
+  assert.deepEqual(await closedBtn('.inv-btns .btn:first-child'), ['Вывод закрыт', true]);
+  await p2.page.click('[data-act="topup"]');
+  await p2.page.waitForSelector('.tu-opts');
+  assert.deepEqual(await p2.page.locator('.tu-opt.closed small').allTextContents(), ['Временно закрыто', 'Временно закрыто']);
+  assert.equal(await p2.page.locator('.tu-opt:not([disabled])').count(), 0);
+  await p2.page.waitForTimeout(300);
+  await p2.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/gate-topup.png' });
+  await p2.page.context().close();
+
+  // all open again: the usual buttons are back
+  for (const g of ['cases', 'upgrade', 'crash', 'dice', 'withdrawals', 'deposits']) {
+    await adm.page.click(`.gate:has([data-gate="${g}"])`);
+    await adm.page.waitForFunction((x) => !document.querySelector(`.gate:has([data-gate="${x}"])`).classList.contains('closed'), g);
+  }
+  const p3 = await open({ user: P, path: `/#/case/${demo.bySlug.noob.id}` });
+  await p3.page.waitForSelector('[data-act="open"]');
+  await p3.page.evaluate(() => (location.hash = '#/profile'));
+  await p3.page.waitForSelector('[data-act="withdraw"]');
+  await p3.page.context().close();
+  await adm.page.context().close();
+});
+
+test('reset: the main admin sets every balance and inventory to zero after a confirmation', { skip }, async () => {
+  const adm = await open({ user: BOSS, path: '/#/admin/overview' });
+  await adm.page.waitForSelector('#resetAll');
+  assert.ok(num(await adm.page.textContent('.adm-stats .stat:nth-child(6) .s-val')) > 0, 'coins on the balances before');
+  // "cancel" changes nothing
+  await adm.page.click('#resetAll');
+  await adm.page.waitForSelector('#confirmYes');
+  assert.equal(await adm.page.textContent('.confirm p'), 'Обнулить баланс и инвентарь у всех игроков? Ракеты в полёте сгорят. Отменить нельзя.');
+  await adm.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/reset-confirm.png' });
+  await adm.page.click('.confirm .btn.ghost');
+  await adm.page.waitForSelector('.modal-wrap', { state: 'detached' });
+  assert.ok((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory')).n > 0);
+  // "yes": everything at zero
+  await adm.page.click('#resetAll');
+  await adm.page.click('#confirmYes');
+  await adm.page.waitForFunction(() => /^Сброшено: балансов — \d+, предметов — \d+$/.test(document.querySelector('.toast.ok')?.textContent || ''));
+  assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_users WHERE balance <> 0')).n, 0);
+  assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory')).n, 0);
+  await adm.page.waitForFunction(() => document.querySelector('.adm-stats .stat:nth-child(6) .s-val')?.textContent.trim() === '0');
+  assert.equal(num(await adm.page.textContent('#bal')), 0, 'the header balance too');
+  await adm.page.context().close();
+});
+
 test('no console errors in any UI test', { skip }, () => {
   assert.deepEqual(allErrors.flat(), []);
 });

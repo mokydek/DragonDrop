@@ -90,7 +90,7 @@ test('stars: invoice link in XTR with coins by the admin rate', async () => {
   assert.equal(r2.body.coins, 7, 'floor(3 * 2.5)');
   const boot = await app.post('/api/bootstrap', { user: player });
   const { buffs, ...topup } = boot.body.topup;
-  assert.deepEqual(topup, { starsRate: 2.5, brainrotsOpen: true });
+  assert.deepEqual(topup, { starsRate: 2.5, starsOpen: true, brainrotsOpen: true });
   assert.ok(Array.isArray(buffs) && buffs.length > 0, 'what buffs add to a deposited brainrot');
   await app.ctx.settings.update({ stars_rate: 1 });
 
