@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { rarityOf } from './rarity.js';
 
 export class GameError extends Error {
@@ -14,6 +15,43 @@ export const cryptoRng = { int: (max) => crypto.randomInt(0, max) };
 export const OPEN_COUNTS = [1, 2, 3, 5]; // openings of one case at once
 /** Built-in case art: case slug -> version of web/img/cases/<slug>.webp (bump it when the picture changes). */
 export const CASE_ART = { noob: 1, pro: 1, dlc: 1, halloween: 1, summer: 1, dragon: 1, mushroom: 1, griffin: 1 };
+
+/** A brainrot's file name: its name in lower-case latin letters and digits, joined by "-" ("Lirilì Larilà" -> "lirili-larila"). */
+export function itemSlug(name) {
+  return String(name ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['’`]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Built-in brainrot pictures: every web/img/items/<slug>.webp, slug -> a short hash of the file (so a new
+ * picture under the same name is not taken from the cache).
+ */
+export const ITEM_ART = (() => {
+  const dir = new URL('../web/img/items/', import.meta.url);
+  const art = new Map();
+  let files = [];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return art;
+  }
+  for (const f of files) {
+    const m = /^([a-z0-9-]+)\.webp$/.exec(f);
+    if (m) art.set(m[1], crypto.createHash('md5').update(readFileSync(new URL(f, dir))).digest('hex').slice(0, 8));
+  }
+  return art;
+})();
+
+/** The built-in picture of a brainrot with this name (a file of the web app), if there is one. */
+export function itemArtUrl(name) {
+  const slug = itemSlug(name);
+  return ITEM_ART.has(slug) ? `img/items/${slug}.webp?v=${ITEM_ART.get(slug)}` : null;
+}
 
 /** Letters and digits only, in lower case: "Dragon_Drop" and "dragon drop" both give "dragondrop". */
 export function nickKey(s) {
@@ -69,7 +107,8 @@ export function createGame({ db, settings, live, tg, rng = cryptoRng }) {
       value: it.value,
       emoji: it.emoji,
       rarity: rarityOf(it.value, it.rarity),
-      image: it.image_url || (it.has_image ? `/api/img/item/${it.id}?v=${it.img_ver.slice(0, 8)}` : null),
+      // a link or a picture from the admin panel, otherwise the brainrot's built-in picture (the emoji without one)
+      image: it.image_url || (it.has_image ? `/api/img/item/${it.id}?v=${it.img_ver.slice(0, 8)}` : itemArtUrl(it.name)),
     };
   }
 
