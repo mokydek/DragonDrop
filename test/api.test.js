@@ -1,6 +1,8 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { startApp, scriptedRng, users } from './helpers.js';
 import { signWebToken } from '../src/auth.js';
 
@@ -602,6 +604,45 @@ test('admin: items, images, players, balance, bans, gifts', async () => {
   assert.equal(promote.body.user.isAdmin, true);
   assert.equal((await app.get('/api/admin/overview', { user: users.carol })).status, 200);
   await app.post(`/api/admin/users/${users.carol.id}/flags`, { user: admin, body: { is_admin: false } });
+});
+
+test('brainrots show their built-in pictures; a link or an upload in the admin panel replaces one, removing the upload brings it back', async () => {
+  const admin = users.alice;
+  await app.post('/api/bootstrap', { user: admin });
+  await app.makeAdmin(admin.id);
+  const all = async () => new Map((await app.get('/api/admin/items', { user: admin })).body.items.map((i) => [i.name, i]));
+  const items = await all();
+  const tim = items.get('Tim Cheese');
+  const ver = crypto.createHash('md5').update(readFileSync(new URL('../web/img/items/tim-cheese.webp', import.meta.url))).digest('hex').slice(0, 8);
+  assert.equal(tim.image, `img/items/tim-cheese.webp?v=${ver}`);
+  assert.equal(tim.hasUpload, false);
+  // a file of the web app
+  const file = await fetch(`${app.base}/${tim.image}`);
+  assert.equal(file.status, 200);
+  assert.match(file.headers.get('content-type'), /^image\/webp/);
+  // every seeded brainrot but four has one; those keep their emoji
+  const seed = JSON.parse(readFileSync(new URL('../src/seed-data.json', import.meta.url), 'utf8')).items;
+  const without = seed.filter((i) => !items.get(i.name).image).map((i) => i.name).sort();
+  assert.deepEqual(without, ["Cupid's Wings", 'Lavaka', 'Rainbow Hammer', 'Wave Rider']);
+  assert.equal(items.get('Lavaka').emoji, seed.find((i) => i.name === 'Lavaka').emoji);
+  for (const { name } of seed) if (items.get(name).image) assert.match(items.get(name).image, /^img\/items\/[a-z0-9-]+\.webp\?v=[0-9a-f]{8}$/, name);
+  // players see the same pictures (cases, the live feed, inventories go through the same item view)
+  const cat = (await app.get('/api/catalog', { user: users.bob })).body;
+  const inCase = cat.cases.flatMap((c) => c.items.map((e) => e.item)).find((i) => i.name === 'Tim Cheese');
+  assert.equal(inCase.image, tim.image);
+
+  // a link wins over the built-in picture, and so does an upload; removing them brings it back
+  const body = { name: tim.name, value: tim.value, emoji: tim.emoji, rarity: tim.rarityOverride, enabled: tim.enabled, withdrawable: tim.withdrawable, depositable: tim.depositable };
+  const linked = await app.put(`/api/admin/items/${tim.id}`, { user: admin, body: { ...body, image_url: 'https://example.com/tim.png' } });
+  assert.equal(linked.body.item.image, 'https://example.com/tim.png');
+  assert.equal((await app.put(`/api/admin/items/${tim.id}`, { user: admin, body: { ...body, image_url: null } })).body.item.image, tim.image);
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const up = await app.post(`/api/admin/items/${tim.id}/image`, { user: admin, body: { dataUrl: png } });
+  assert.match(up.body.item.image, /^\/api\/img\/item\/\d+\?v=/);
+  assert.equal((await all()).get('Tim Cheese').hasUpload, true);
+  const del = await app.del(`/api/admin/items/${tim.id}/image`, { user: admin });
+  assert.equal(del.body.item.image, tim.image, 'back to the built-in picture');
+  assert.equal((await all()).get('Tim Cheese').hasUpload, false);
 });
 
 test('admin: settings and channel check', async () => {

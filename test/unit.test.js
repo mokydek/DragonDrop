@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { validateInitData, buildInitData, signWebToken, verifyWebToken } from '../src/auth.js';
-import { pickWeighted, upgradeChance, cryptoRng, CASE_ART } from '../src/game.js';
+import { pickWeighted, upgradeChance, cryptoRng, CASE_ART, ITEM_ART, itemSlug, itemArtUrl } from '../src/game.js';
 import { rarityOf } from '../src/rarity.js';
 import { resolveSsl } from '../src/db.js';
 import { validateSetting } from '../src/settings.js';
@@ -276,4 +276,35 @@ test('built-in case art: a light WebP for seeded cases only, in the shape of the
     const h = b.readUInt16LE(28) & 0x3fff;
     assert.deepEqual([w, h], [320, 272], slug);
   }
+});
+
+test('built-in brainrot pictures: one light square WebP with a transparent background for every seeded brainrot that has one', async () => {
+  const { readFileSync: rf, readdirSync } = await import('node:fs');
+  assert.deepEqual(
+    ['Lirilì Larilà', "Cupid's Wings", 'W or L', 'Trenostruzzo Turbo 3000', '  Tim  Cheese '].map(itemSlug),
+    ['lirili-larila', 'cupids-wings', 'w-or-l', 'trenostruzzo-turbo-3000', 'tim-cheese'],
+  );
+  const seed = JSON.parse(rf(new URL('../src/seed-data.json', import.meta.url), 'utf8'));
+  const slugs = seed.items.map((i) => itemSlug(i.name));
+  assert.equal(new Set(slugs).size, slugs.length, 'one file name per brainrot');
+  // no picture yet: these keep their emoji
+  const without = ['Rainbow Hammer', 'Wave Rider', "Cupid's Wings", 'Lavaka'];
+  assert.deepEqual(seed.items.filter((i) => !ITEM_ART.has(itemSlug(i.name))).map((i) => i.name).sort(), [...without].sort());
+  // every file belongs to a brainrot
+  const files = readdirSync(new URL('../web/img/items/', import.meta.url));
+  assert.deepEqual(files.filter((f) => !slugs.includes(f.replace(/\.webp$/, ''))), []);
+  assert.equal(files.length, seed.items.length - without.length);
+  for (const f of files) {
+    const b = rf(new URL(`../web/img/items/${f}`, import.meta.url));
+    assert.equal(b.toString('latin1', 0, 4) + b.toString('latin1', 8, 12), 'RIFFWEBP', f);
+    assert.ok(b.length < 32_000, `${f}: ${b.length} bytes`);
+    // extended format with an alpha channel: canvas width and height minus one in 24 bits each
+    assert.equal(b.toString('latin1', 12, 16), 'VP8X', f);
+    assert.ok(b[20] & 0x10, `${f}: alpha`);
+    assert.deepEqual([b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1], [256, 256], f);
+    assert.equal(ITEM_ART.get(f.replace(/\.webp$/, '')), crypto.createHash('md5').update(b).digest('hex').slice(0, 8), `${f}: version`);
+  }
+  assert.match(itemArtUrl('Tung Tung Tung Sahur'), /^img\/items\/tung-tung-tung-sahur\.webp\?v=[0-9a-f]{8}$/);
+  assert.equal(itemArtUrl('Lavaka'), null);
+  assert.equal(itemArtUrl('Some New Brainrot'), null);
 });
