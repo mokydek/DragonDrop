@@ -1,12 +1,15 @@
 // Colour dice: the player picks one of six colours and stakes coins or brainrots; three dice with a
-// colour on every side are thrown. The colour on 1 / 2 / 3 of the dice pays ×2 / ×3 / ×4 (the stake
-// included), on none the stake is lost. Fair dice: each shows every colour with the same chance,
-// so the game gives back 199 / 216 ≈ 92.1 % on average.
+// colour on every side are thrown. Two dice of one colour (a pair, whatever the colour) lose the
+// throw; otherwise the colour on 1 / 3 of the dice pays ×2 / ×4 (the stake included), on none the
+// stake is lost. Fair dice: each shows every colour with the same chance, so the game gives back
+// (60 × 2 + 1 × 4) / 216 = 124 / 216 ≈ 57.4 % on average.
 import { GameError, cryptoRng } from './game.js';
 
-export const DICE_COLORS = ['red', 'yellow', 'green', 'blue', 'purple', 'pink'];
-/** What a stake is multiplied by for 0, 1, 2, 3 dice showing the colour. */
-export const DICE_PAYS = [0, 2, 3, 4];
+export const DICE_COLORS = ['red', 'yellow', 'green', 'blue', 'purple', 'orange'];
+/** What a stake is multiplied by for 0, 1, 2, 3 dice showing the colour (two of a colour is a pair). */
+export const DICE_PAYS = [0, 2, 0, 4];
+/** Exactly two of the three dice show the same colour: the throw is lost. */
+export const isPair = (dice) => new Set(dice).size === 2;
 
 /** The ids the player wants to stake, cleaned (1..12 distinct positive ints) or null. */
 export function parseStakeIds(ids) {
@@ -73,7 +76,7 @@ export function createDice({ db, settings, game, rng = cryptoRng }) {
       // three fair dice
       const dice = [0, 1, 2].map(() => DICE_COLORS[rng.int(DICE_COLORS.length)]);
       const matches = dice.filter((d) => d === color).length;
-      const mult = DICE_PAYS[matches];
+      const mult = isPair(dice) ? 0 : DICE_PAYS[matches];
       const win = bet * mult;
       const best = kind === 'brainrots' && win > 0 ? bestItem(win) : null;
       let r = (
@@ -105,7 +108,7 @@ export function createDice({ db, settings, game, rng = cryptoRng }) {
     });
   }
 
-  /** For the app: the limits, the colours and what 0 / 1 / 2 / 3 dice pay. */
+  /** For the app: the limits, the colours and what 0 / 1 / 2 / 3 dice pay (2 = a pair, lost). */
   function publicConfig() {
     const c = config();
     return { minBet: c.minBet, maxBet: c.maxBet, colors: DICE_COLORS, pays: DICE_PAYS };
