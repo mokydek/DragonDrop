@@ -1,9 +1,9 @@
-// Colour dice: a colour, a stake (coins or brainrots), three fair dice; 1 / 2 / 3 dice of the colour
-// pay ×2 / ×3 / ×4, none loses the stake.
+// Colour dice: a colour, a stake (coins or brainrots), three fair dice; 1 / 3 dice of the colour pay
+// ×2 / ×4, none loses the stake, and so do two dice of one colour (a pair), whatever the colour.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, scriptedRng } from './helpers.js';
-import { DICE_COLORS, DICE_PAYS } from '../src/dice.js';
+import { DICE_COLORS, DICE_PAYS, isPair } from '../src/dice.js';
 
 const rng = scriptedRng();
 let app;
@@ -34,22 +34,30 @@ const give = async (u, names) => {
   return ids;
 };
 
-test('six colours, ×2 / ×3 / ×4 for 1 / 2 / 3 dice: the game gives back 199 / 216 on average; the app gets the rules', async () => {
-  assert.deepEqual(DICE_COLORS, ['red', 'yellow', 'green', 'blue', 'purple', 'pink']);
-  // every one of the 6³ throws, betting on red
+test('six colours (orange, no pink), ×2 / ×4 for 1 / 3 dice, a pair loses: the game gives back 124 / 216 on average; the app gets the rules', async () => {
+  assert.deepEqual(DICE_COLORS, ['red', 'yellow', 'green', 'blue', 'purple', 'orange']);
+  // a pair is exactly two dice of one colour: three of a kind and three different are not
+  assert.deepEqual([['red', 'red', 'blue'], ['blue', 'red', 'blue'], ['red', 'red', 'red'], ['red', 'blue', 'green']].map(isPair), [true, true, false, false]);
+  // every one of the 6³ throws, betting on red: 60 win ×2 (one red, the other two different), 1 wins ×4
   let back = 0;
-  for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) for (let c = 0; c < 6; c++) back += DICE_PAYS[[a, b, c].filter((x) => x === 0).length];
-  assert.equal(back, 199);
+  let wins = 0;
+  for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) for (let c = 0; c < 6; c++) {
+    const m = isPair([a, b, c]) ? 0 : DICE_PAYS[[a, b, c].filter((x) => x === 0).length];
+    back += m;
+    if (m) wins++;
+  }
+  assert.deepEqual([back, wins], [124, 61]);
   const boot = (await app.post('/api/bootstrap', { user: p })).body;
-  assert.deepEqual(boot.dice, { minBet: 5, maxBet: 100000, colors: DICE_COLORS, pays: [0, 2, 3, 4] });
+  assert.deepEqual(boot.dice, { minBet: 5, maxBet: 100000, colors: DICE_COLORS, pays: [0, 2, 0, 4] });
   assert.deepEqual((await app.get('/api/catalog', { user: p })).body.dice, boot.dice);
 });
 
 test('coins: the stake leaves the balance, a win comes back multiplied; every throw is stored and logged', async () => {
   await app.setBalance(p.id, 1000);
   const cases = [
-    { color: 'red', bet: 100, faces: ['red', 'blue', 'pink'], matches: 1, mult: 2 },
-    { color: 'red', bet: 100, faces: ['red', 'purple', 'red'], matches: 2, mult: 3 },
+    { color: 'red', bet: 100, faces: ['red', 'blue', 'orange'], matches: 1, mult: 2 },
+    { color: 'red', bet: 100, faces: ['red', 'purple', 'red'], matches: 2, mult: 0 }, // a pair of red: lost
+    { color: 'red', bet: 100, faces: ['blue', 'red', 'blue'], matches: 1, mult: 0 }, // red came up, but a pair of blue
     { color: 'green', bet: 200, faces: ['green', 'green', 'green'], matches: 3, mult: 4 },
     { color: 'yellow', bet: '150', faces: ['red', 'green', 'blue'], matches: 0, mult: 0 },
   ];
@@ -106,12 +114,12 @@ test('brainrots: they leave the inventory; a win hands out the best brainrot it 
   const ids = await give(q, stake);
   const value = stake.reduce((s, n) => s + item(n).value, 0);
   assert.ok(value >= 100, `stake ${value}`);
-  const r = await throwDice(q, { color: 'blue', ids }, ['blue', 'yellow', 'blue']);
+  const r = await throwDice(q, { color: 'blue', ids }, ['blue', 'yellow', 'green']);
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  const win = value * 3;
+  const win = value * 2;
   const best = [...app.ctx.game.catalog.items.values()].filter((i) => i.enabled && i.value <= win).sort((a, b) => b.value - a.value)[0];
   const roll = r.body.roll;
-  assert.deepEqual({ kind: roll.kind, bet: roll.bet, matches: roll.matches, mult: roll.mult, win: roll.win }, { kind: 'brainrots', bet: value, matches: 2, mult: 3, win });
+  assert.deepEqual({ kind: roll.kind, bet: roll.bet, matches: roll.matches, mult: roll.mult, win: roll.win }, { kind: 'brainrots', bet: value, matches: 1, mult: 2, win });
   assert.deepEqual(roll.betItems.map((e) => e.name).sort(), [...stake].sort());
   assert.equal(roll.item.itemId, best.id);
   assert.equal(roll.coins, win - best.value);
@@ -127,7 +135,7 @@ test('brainrots: they leave the inventory; a win hands out the best brainrot it 
   const ids2 = await give(q, ['Cerberus']);
   assert.ok(item('Cerberus').value >= 100);
   const b0 = await bal(q);
-  const lost = await throwDice(q, { color: 'pink', ids: ids2 }, ['red', 'red', 'green']);
+  const lost = await throwDice(q, { color: 'orange', ids: ids2 }, ['red', 'red', 'green']);
   assert.deepEqual([lost.body.roll.matches, lost.body.roll.win, lost.body.roll.item, lost.body.roll.coins], [0, 0, null, 0]);
   assert.equal((await app.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [ids2[0]])).n, 0);
   assert.equal(await bal(q), b0);
@@ -183,7 +191,7 @@ test('dice start from 5 coins: the default, and once on a database from the firs
   await app.ctx.settings.update({ dice_min_bet: 5 });
   await wait(3100);
   await app.setBalance(q.id, 5);
-  const r = await throwDice(q, { color: 'red', bet: 5 }, ['red', 'red', 'blue']);
+  const r = await throwDice(q, { color: 'red', bet: 5 }, ['red', 'green', 'blue']);
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.deepEqual([r.body.roll.bet, r.body.roll.win, Number(r.body.balance)], [5, 15, 15]);
+  assert.deepEqual([r.body.roll.bet, r.body.roll.win, Number(r.body.balance)], [5, 10, 10]);
 });
