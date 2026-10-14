@@ -50,7 +50,7 @@ const S = {
   depositIds: null, // brainrots that can be picked in a deposit (null: server doesn't say — all)
   upgrade: { edge: 10, minChance: 1, maxChance: 80, luck: 1 },
   crash: { minBet: 100, maxBet: 100000, maxMult: 1000, speed: 0.00008 },
-  dice: { minBet: 5, maxBet: 100000, colors: ['red', 'yellow', 'green', 'blue', 'purple', 'pink'], pays: [0, 2, 3, 4] }, // colour dice
+  dice: { minBet: 5, maxBet: 100000, colors: ['red', 'yellow', 'green', 'blue', 'purple', 'orange'], pays: [0, 2, 0, 4] }, // colour dice
   autoPromo: null, // the auto promo code of these hours: { code, pct, endsAt, hours, used } (null: none)
   tuCode: '', // code put in the top-up form when it opens (the auto promo code from its card)
   free: null,
@@ -1671,19 +1671,21 @@ async function crashGo() {
 
 // ------------------------------------------------------------------ colour dice
 // The player picks a colour and a stake; the server throws three dice (each shows one of six colours)
-// and pays ×2 / ×3 / ×4 for 1 / 2 / 3 dice of the colour. The app only shows the throw it got back.
-const DICE_HEX = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6', purple: '#a855f7', pink: '#ec4899' };
+// and pays ×2 / ×4 for 1 / 3 dice of the colour; two dice of one colour (a pair) lose. The app only
+// shows the throw it got back.
+const DICE_HEX = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6', purple: '#a855f7', orange: '#f97316' };
 let diceLast = null; // the last throw, shown on the dice until another one
 const diceSel = new Set(); // inventory ids staked in brainrots mode
 
 function dieHtml(c, i, last) {
-  const cls = !c ? ' blank' : last ? (c === last.color ? ' hit' : ' miss') : '';
+  const cls = !c ? ' blank' : last ? (last.win > 0 && c === last.color ? ' hit' : ' miss') : '';
   return html`<div class="die${cls}" data-i="${i}" style="--dc:${c ? DICE_HEX[c] : 'transparent'}">${c ? '' : '?'}</div>`;
 }
 
 /** What the last throw brought, under the dice. */
 function diceNote(r) {
-  if (!r.win) return html`<span class="dn-lost">${t('dice.lost')}</span>`;
+  // lost: the colour did not come up, or it did but two dice showed one colour
+  if (!r.win) return html`<span class="dn-lost">${t(r.matches ? 'dice.pair' : 'dice.lost')}</span>`;
   const head = html`<b class="dn-won">${t('dice.won', { n: r.matches, m: r.mult })}</b>`;
   if (r.kind === 'brainrots') {
     return html`${head} ${r.item ? html`<span class="cr-win-item r-${r.item.rarity}">${art(r.item)}<b>${r.item.name}</b></span>` : ''}${r.coins > 0 ? html` <span class="money">${coin(14)}<b class="priv">+${fmt(r.coins)}</b></span>` : ''}`;
@@ -1790,7 +1792,7 @@ async function diceGo() {
       await sleep(S.fast ? 70 : 170);
     }
     diceLast = r.roll;
-    dice.forEach((d, i) => d.classList.add(r.roll.dice[i] === r.roll.color ? 'hit' : 'miss'));
+    dice.forEach((d, i) => d.classList.add(r.roll.win > 0 && r.roll.dice[i] === r.roll.color ? 'hit' : 'miss'));
     if (note && note.isConnected) render(note, diceNote(r.roll));
     setBalance(r.balance);
     if (r.roll.win > 0) {

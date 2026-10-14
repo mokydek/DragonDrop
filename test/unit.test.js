@@ -187,8 +187,10 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
   const used = new Set([...src.matchAll(/\bt\('([^']+)'/g)].map((m) => m[1]).filter((k) => !k.endsWith('.')));
   const dynamic = [
     ...['cases', 'upgrade', 'crash', 'dice', 'profile', 'admin'].map((k) => 'tab.' + k),
-    ...['red', 'yellow', 'green', 'blue', 'purple', 'pink'].map((k) => 'dice.c.' + k),
+    ...['red', 'yellow', 'green', 'blue', 'purple', 'orange'].map((k) => 'dice.c.' + k),
     ...[1, 2, 3].map((k) => 'dice.pay' + k),
+    'dice.lost',
+    'dice.pair',
     ...['one', 'few', 'many'].map((k) => 'ap.h.' + k),
     ...['low', 'top', 'high', 'mid', 'base'].flatMap((k) => ['buffs.t.' + k, 'buffs.s.' + k]),
     ...['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'secret'].map((k) => 'r.' + k),

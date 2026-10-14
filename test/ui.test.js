@@ -2933,26 +2933,26 @@ test('buffs: the main admin edits the list in Settings (a %, one more, one less)
 });
 
 // ------------------------------------------------------------------ colour dice
-const DC = { red: 0, yellow: 1, green: 2, blue: 3, purple: 4, pink: 5 }; // colour -> the random number that throws it
-const DC_HEX = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6', purple: '#a855f7', pink: '#ec4899' };
+const DC = { red: 0, yellow: 1, green: 2, blue: 3, purple: 4, orange: 5 }; // colour -> the random number that throws it
+const DC_HEX = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6', purple: '#a855f7', orange: '#f97316' };
 const diceFaces = (...c) => uiRng.queue.push(...c.map((x) => DC[x]));
 // the three dice on screen: their colour and whether they are the player's colour
 const diceShown = (page) =>
   page.$$eval('#dcStage .die', (ds) => ds.map((d) => [d.style.getPropertyValue('--dc').trim(), d.classList.contains('hit') ? 'hit' : d.classList.contains('miss') ? 'miss' : '']));
 const hexes = (...c) => c.map((x) => DC_HEX[x]);
 
-test('colour dice: a tab of its own; pick a colour, stake coins; the dice land on what the server threw; 1 / 2 / 3 of the colour pay ×2 / ×3 / ×4, none takes the stake', { skip }, async () => {
+test('colour dice: a tab of its own; pick a colour, stake coins; the dice land on what the server threw; 1 / 3 of the colour pay ×2 / ×4; none, or two dice of one colour, take the stake', { skip }, async () => {
   await demo.app.setBalance(ME.id, 1000);
   const { page, errors } = await open({ path: '/#/dice' });
   await page.waitForSelector('#dcBtn');
   await page.evaluate(OFFLINE_AUDIO);
   assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Апгрейдер', 'Ракета', 'Кейсы', 'Дайсы', 'Профиль']);
   assert.equal(await page.getAttribute('#tabbar button.on', 'data-tab'), 'dice');
-  // before the first throw: three blank dice, six colours (red picked), what 1 / 2 / 3 dice pay
+  // before the first throw: three blank dice, six colours (red picked), what 1 die, two alike and 3 dice pay
   assert.deepEqual(await page.locator('#dcStage .die').allTextContents(), ['?', '?', '?']);
-  assert.deepEqual(await page.locator('.dc-chip span').allTextContents(), ['Красный', 'Жёлтый', 'Зелёный', 'Синий', 'Фиолетовый', 'Розовый']);
+  assert.deepEqual(await page.locator('.dc-chip span').allTextContents(), ['Красный', 'Жёлтый', 'Зелёный', 'Синий', 'Фиолетовый', 'Оранжевый']);
   assert.equal(await page.getAttribute('.dc-chip.on', 'data-c'), 'red');
-  assert.deepEqual((await page.locator('.dice-pays span').allTextContents()).map((s) => s.replace(/\s+/g, ' ')), ['1 кубик ×2', '2 кубика ×3', '3 кубика ×4']);
+  assert.deepEqual((await page.locator('.dice-pays span').allTextContents()).map((s) => s.replace(/\s+/g, ' ')), ['1 кубик ×2', '2 одинаковых ×0', '3 кубика ×4']);
   assert.equal(await page.textContent('#dcBtn'), 'Бросить');
   assert.equal(await page.inputValue('#dcBet'), '100');
   const bal = async () => num(await page.textContent('#bal'));
@@ -2969,32 +2969,39 @@ test('colour dice: a tab of its own; pick a colour, stake coins; the dice land o
   assert.equal((await page.textContent('.toast.error')).replace(/\s/g, ' '), 'Ставка от 5 до 100 000 монет');
   assert.equal(await thrown(), 0);
   assert.equal(await bal(), 1000);
-  // blue for 200: blue · red · blue — two dice, ×3
+  // blue for 200: blue · red · green — one die, ×2
   await page.click('[data-act="dc-color"][data-c="blue"]');
   assert.equal(await page.getAttribute('.dc-chip.on', 'data-c'), 'blue');
   assert.equal(await page.locator('.dc-chip[aria-pressed="true"]').count(), 1);
   await page.fill('#dcBet', '200');
-  diceFaces('blue', 'red', 'blue');
+  diceFaces('blue', 'red', 'green');
   await page.click('#dcBtn');
   await page.waitForSelector('#dcStage .die.rolling');
   assert.equal(await page.locator('#dcStage .die.rolling').count(), 3, 'all three tumble');
   assert.equal(await page.isDisabled('#dcBtn'), true, 'one throw at a time');
   await page.waitForSelector('#dcNote .dn-won');
-  assert.deepEqual(await diceShown(page), [[DC_HEX.blue, 'hit'], [DC_HEX.red, 'miss'], [DC_HEX.blue, 'hit']]);
-  assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 2 — ×3');
-  assert.equal(await page.textContent('#dcNote .money b'), '+600');
-  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1400');
+  assert.deepEqual(await diceShown(page), [[DC_HEX.blue, 'hit'], [DC_HEX.red, 'miss'], [DC_HEX.green, 'miss']]);
+  assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 1 — ×2');
+  assert.equal(await page.textContent('#dcNote .money b'), '+400');
+  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1200');
   assert.equal(await page.isDisabled('#dcBtn'), false);
   assert.deepEqual(await page.evaluate(() => window.__sfx), ['coins'], 'a win jingles coins');
-  // pink for 100: red · yellow · green — none, the stake is gone
-  await page.click('[data-act="dc-color"][data-c="pink"]');
+  // blue for 100: blue · red · red — blue came up, but two dice of one colour: the stake is gone
   await page.fill('#dcBet', '100');
+  diceFaces('blue', 'red', 'red');
+  await page.click('#dcBtn');
+  await page.waitForSelector('#dcNote .dn-lost');
+  assert.deepEqual(await diceShown(page), [[DC_HEX.blue, 'miss'], [DC_HEX.red, 'miss'], [DC_HEX.red, 'miss']]);
+  assert.equal(await page.textContent('#dcNote'), 'Два одинаковых — проигрыш');
+  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1100');
+  // orange for 100: red · yellow · green — none, the stake is gone
+  await page.click('[data-act="dc-color"][data-c="orange"]');
   diceFaces('red', 'yellow', 'green');
   await page.click('#dcBtn');
   await page.waitForSelector('#dcNote .dn-lost');
   assert.deepEqual(await diceShown(page), [[DC_HEX.red, 'miss'], [DC_HEX.yellow, 'miss'], [DC_HEX.green, 'miss']]);
   assert.equal(await page.textContent('#dcNote'), 'Мимо — цвет не выпал');
-  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1300');
+  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1000');
   assert.deepEqual(await page.evaluate(() => window.__sfx), ['coins'], 'a miss is silent');
   // green for 100: all three — ×4
   await page.click('[data-act="dc-color"][data-c="green"]');
@@ -3004,18 +3011,19 @@ test('colour dice: a tab of its own; pick a colour, stake coins; the dice land o
   assert.deepEqual(await diceShown(page), hexes('green', 'green', 'green').map((h) => [h, 'hit']));
   assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 3 — ×4');
   assert.equal(await page.textContent('#dcNote .money b'), '+400');
-  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1600'); // 1300 − 100 + 400
+  await page.waitForFunction(() => document.querySelector('#bal').textContent.replace(/\D/g, '') === '1300'); // 1000 − 100 + 400
   // the server: every throw stored as shown, the balance matches
   const rows = await demo.ctx.db.many('SELECT color, dice, matches, mult, bet, win, bet_kind FROM bs_dice WHERE user_id = $1 ORDER BY id', [ME.id]);
   assert.deepEqual(
     rows.map((r) => [r.color, r.dice.join(' '), r.matches, r.mult, Number(r.bet), Number(r.win), r.bet_kind]),
     [
-      ['blue', 'blue red blue', 2, 3, 200, 600, 'coins'],
-      ['pink', 'red yellow green', 0, 0, 100, 0, 'coins'],
+      ['blue', 'blue red green', 1, 2, 200, 400, 'coins'],
+      ['blue', 'blue red red', 1, 0, 100, 0, 'coins'],
+      ['orange', 'red yellow green', 0, 0, 100, 0, 'coins'],
       ['green', 'green green green', 3, 4, 100, 400, 'coins'],
     ],
   );
-  assert.equal(Number((await apiMe()).me.balance), 1600);
+  assert.equal(Number((await apiMe()).me.balance), 1300);
   // another tab and back: the last throw, the colour and the stake are still there
   await page.click('#tabbar [data-tab="cases"]');
   await page.waitForSelector('.case-grid');
@@ -3050,18 +3058,18 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   assert.equal((await page.textContent('.toast.error')).replace(/\s/g, ' '), 'Ставка от 5 до 100 000 монет');
   assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [small])).n, 1);
   await page.click(`[data-act="dc-pick"][data-inv="${small}"]`);
-  // Spooky and Pumpky (200) on purple: purple · purple · pink — ×3 = 600
+  // Spooky and Pumpky (200) on purple: purple · yellow · orange — ×2 = 400
   await page.click(`[data-act="dc-pick"][data-inv="${inv}"]`);
   assert.equal(num(await page.textContent('#dcBetVal')), 200);
   assert.equal(await page.isDisabled('#dcBtn'), false);
   await page.click('[data-act="dc-color"][data-c="purple"]');
-  diceFaces('purple', 'purple', 'pink');
+  diceFaces('purple', 'yellow', 'orange');
   await page.click('#dcBtn');
   await page.waitForSelector('#dcNote .dn-won');
-  const win = 600;
+  const win = 400;
   const best = items.filter((i) => i.enabled && i.value <= win).sort((a, b) => b.value - a.value)[0];
-  assert.deepEqual(await diceShown(page), [[DC_HEX.purple, 'hit'], [DC_HEX.purple, 'hit'], [DC_HEX.pink, 'miss']]);
-  assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 2 — ×3');
+  assert.deepEqual(await diceShown(page), [[DC_HEX.purple, 'hit'], [DC_HEX.yellow, 'miss'], [DC_HEX.orange, 'miss']]);
+  assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 1 — ×2');
   assert.equal(await page.textContent('#dcNote .cr-win-item b'), best.name);
   const rest = win - best.value;
   if (rest > 0) assert.equal(await page.textContent('#dcNote .money b'), `+${rest}`);
@@ -3079,7 +3087,7 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   // the result stays on the dice after the grid is redrawn
   assert.equal(await page.textContent('#dcNote .cr-win-item b'), best.name);
   const r = await demo.ctx.db.one('SELECT bet, bet_kind, win, bet_items, win_item FROM bs_dice WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [ME.id]);
-  assert.deepEqual([Number(r.bet), r.bet_kind, Number(r.win), r.bet_items.map((x) => x.name), r.win_item.itemId], [200, 'brainrots', 600, ['Spooky and Pumpky'], best.id]);
+  assert.deepEqual([Number(r.bet), r.bet_kind, Number(r.win), r.bet_items.map((x) => x.name), r.win_item.itemId], [200, 'brainrots', 400, ['Spooky and Pumpky'], best.id]);
   // a miss: the staked brainrot is lost
   await page.click(`[data-act="dc-pick"][data-inv="${won.id}"]`);
   await page.click('[data-act="dc-color"][data-c="yellow"]');
