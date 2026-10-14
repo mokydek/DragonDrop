@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { validateInitData, buildInitData, signWebToken, verifyWebToken } from '../src/auth.js';
-import { pickWeighted, upgradeChance, cryptoRng } from '../src/game.js';
+import { pickWeighted, upgradeChance, cryptoRng, CASE_ART } from '../src/game.js';
 import { rarityOf } from '../src/rarity.js';
 import { resolveSsl } from '../src/db.js';
 import { validateSetting } from '../src/settings.js';
@@ -255,4 +255,25 @@ test('live feed shows a drop only after the opening animation', async () => {
   assert.equal(live.snapshot().feed.length, 1);
   assert.equal(live.snapshot().top24.id, 1);
   live.stop();
+});
+
+test('built-in case art: a light WebP for seeded cases only, in the shape of the case pictures (20:17)', async () => {
+  const { readFileSync: rf, existsSync } = await import('node:fs');
+  const seed = JSON.parse(rf(new URL('../src/seed-data.json', import.meta.url), 'utf8'));
+  const slugs = new Set(seed.cases.map((c) => c.slug));
+  assert.deepEqual(Object.keys(CASE_ART).sort(), ['dlc', 'dragon', 'griffin', 'halloween', 'mushroom', 'noob', 'pro', 'summer']);
+  for (const [slug, v] of Object.entries(CASE_ART)) {
+    assert.ok(slugs.has(slug), slug);
+    assert.ok(Number.isInteger(v) && v > 0, slug);
+    const url = new URL(`../web/img/cases/${slug}.webp`, import.meta.url);
+    assert.ok(existsSync(url), slug);
+    const b = rf(url);
+    assert.equal(b.toString('latin1', 0, 4) + b.toString('latin1', 8, 12), 'RIFFWEBP', slug);
+    assert.ok(b.length < 32_000, `${slug}: ${b.length} bytes`);
+    // VP8 (lossy) frame header: width and height in 14 bits each
+    assert.equal(b.toString('latin1', 12, 16), 'VP8 ', slug);
+    const w = b.readUInt16LE(26) & 0x3fff;
+    const h = b.readUInt16LE(28) & 0x3fff;
+    assert.deepEqual([w, h], [320, 272], slug);
+  }
 });

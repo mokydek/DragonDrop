@@ -1829,12 +1829,12 @@ test('admin: categories — make one, drop cases in, players see them under the 
 });
 
 test('admin: case picture upload shows on the case card, removal brings the chest back', { skip }, async () => {
-  const id = demo.bySlug.summer.id;
+  const id = demo.bySlug.fish.id; // a case without built-in art
   const { page, errors } = await open({ path: `/#/admin/cases/${id}` });
   await page.waitForSelector('#caseForm #cImgRow');
   assert.equal(await page.$('#cImgDel'), null, 'nothing to remove yet');
   // unsaved edit in the form must survive the upload
-  await page.fill('#cPrice', '351');
+  await page.fill('#cPrice', '66');
   const jpg = await page.evaluate(() => {
     const c = document.createElement('canvas');
     c.width = 1360;
@@ -1846,13 +1846,13 @@ test('admin: case picture upload shows on the case card, removal brings the ches
     g.fillRect(300, 250, 700, 600);
     return c.toDataURL('image/jpeg', 0.9).split(',')[1];
   });
-  await page.setInputFiles('#cImgFile', { name: 'summer.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpg, 'base64') });
+  await page.setInputFiles('#cImgFile', { name: 'fish.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpg, 'base64') });
   await page.waitForSelector('#cImgDel');
   await page.waitForSelector('#cPreview img.case-img');
-  assert.equal(await page.inputValue('#cPrice'), '351', 'form edits kept');
+  assert.equal(await page.inputValue('#cPrice'), '66', 'form edits kept');
   const adm = (await demo.app.get('/api/admin/cases', { user: ME })).body.cases.find((c) => c.id === id);
   assert.match(adm.image, /^\/api\/img\/case\//);
-  assert.equal(adm.price, 350, 'price not saved by the upload');
+  assert.equal(adm.price, 65, 'price not saved by the upload');
   // stored picture is downscaled to 512px
   const size = await page.evaluate(async (src) => {
     const im = new Image();
@@ -1870,10 +1870,10 @@ test('admin: case picture upload shows on the case card, removal brings the ches
   assert.equal(await card.locator('svg.chest').count(), 0);
   const box = await card.locator('img.case-img').boundingBox();
   const cardBox = await card.boundingBox();
-  assert.ok(box.width > cardBox.width * 0.7 && box.width <= cardBox.width, `picture fills the card (${box.width} of ${cardBox.width})`);
+  assert.ok(box.width > cardBox.width * 0.7 && box.width <= cardBox.width + 0.5, `picture fills the card (${box.width} of ${cardBox.width})`);
   assert.ok(await card.locator('img.case-img').evaluate((im) => im.complete && im.naturalWidth > 0), 'picture loaded');
-  // other cases keep the chest
-  assert.equal(await page.locator(`.case-card[data-case="${demo.bySlug.noob.id}"] svg.chest`).count(), 1);
+  // other cases without art keep the chest
+  assert.equal(await page.locator(`.case-card[data-case="${demo.bySlug.share.id}"] svg.chest`).count(), 1);
 
   // remove it again
   await page.evaluate((x) => (location.hash = '#/admin/cases/' + x), id);
@@ -1881,6 +1881,52 @@ test('admin: case picture upload shows on the case card, removal brings the ches
   await page.click('#cImgDel');
   await page.waitForSelector('#cPreview svg.chest');
   assert.equal((await demo.app.get('/api/admin/cases', { user: ME })).body.cases.find((c) => c.id === id).image, null);
+  assert.deepEqual(errors, []);
+  await page.context().close();
+});
+
+test('built-in case art: the picture on the tile and on the case page; an upload replaces it, removing the upload brings it back', { skip }, async () => {
+  const art = ['noob', 'pro', 'dlc', 'halloween', 'summer', 'dragon', 'mushroom', 'griffin'];
+  const { page, errors } = await open({ path: '/#/cases' });
+  await page.waitForSelector('.case-grid');
+  for (const slug of art) {
+    assert.equal(await page.getAttribute(`.case-card[data-case="${demo.bySlug[slug].id}"] img.case-img`, 'src'), `img/cases/${slug}.webp?v=1`, slug);
+  }
+  await page.waitForFunction((n) => {
+    const ims = [...document.querySelectorAll('.case-card img.case-img')];
+    return ims.length === n && ims.every((im) => im.complete && im.naturalWidth === 320);
+  }, art.length);
+  for (const slug of ['fish', 'nick', 'share']) assert.equal(await page.locator(`.case-card[data-case="${demo.bySlug[slug].id}"] svg.chest`).count(), 1, slug);
+  // edge to edge at the top of the tile
+  const fit = await page.evaluate((id) => {
+    const card = document.querySelector(`.case-card[data-case="${id}"]`).getBoundingClientRect();
+    const im = document.querySelector(`.case-card[data-case="${id}"] img.case-img`).getBoundingClientRect();
+    return [Math.round(im.left - card.left), Math.round(card.right - im.right), Math.round(im.top - card.top)];
+  }, demo.bySlug.dragon.id);
+  assert.deepEqual(fit, [0, 0, 0]);
+  // the case page
+  await page.evaluate((id) => (location.hash = '#/case/' + id), demo.bySlug.dragon.id);
+  await page.waitForSelector('.case-hero img.case-img');
+  assert.equal(await page.getAttribute('.case-hero img.case-img', 'src'), 'img/cases/dragon.webp?v=1');
+  // the admin: the art shows, but there is no upload to remove; an upload replaces it and removing it brings the art back
+  await page.evaluate((id) => (location.hash = '#/admin/cases/' + id), demo.bySlug.dragon.id);
+  await page.waitForSelector('#caseForm #cImgRow');
+  assert.equal(await page.getAttribute('#cPreview img.case-img', 'src'), 'img/cases/dragon.webp?v=1');
+  assert.equal(await page.$('#cImgDel'), null);
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 680;
+    c.height = 578;
+    c.getContext('2d').fillRect(0, 0, 680, 578);
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await page.setInputFiles('#cImgFile', { name: 'dragon.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  await page.waitForSelector('#cImgDel');
+  assert.match(await page.getAttribute('#cPreview img.case-img', 'src'), /\/api\/img\/case\//);
+  await page.click('#cImgDel');
+  await page.waitForSelector('#cPreview img.case-img[src="img/cases/dragon.webp?v=1"]');
+  assert.equal(await page.$('#cImgDel'), null);
+  assert.equal((await demo.app.get('/api/admin/cases', { user: ME })).body.cases.find((c) => c.slug === 'dragon').image, 'img/cases/dragon.webp?v=1');
   assert.deepEqual(errors, []);
   await page.context().close();
 });

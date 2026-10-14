@@ -280,7 +280,7 @@ async function caseEditor(body, id) {
   function caseImgRow() {
     return h`<span class="img-lbl">${C.t('a.image')}</span>
       <label class="btn small ghost file-btn">${C.t('a.upload')}<input type="file" accept="image/*" id="cImgFile" hidden></label>
-      ${data.image ? h`<button type="button" class="btn small ghost" id="cImgDel">${C.t('a.removeImg')}</button>` : ''}`;
+      ${data.hasUpload ? h`<button type="button" class="btn small ghost" id="cImgDel">${C.t('a.removeImg')}</button>` : ''}`;
   }
 
   function lootRows() {
@@ -347,9 +347,10 @@ async function caseEditor(body, id) {
       C.render(body.querySelector('#cPreview'), C.chest(color, f.get('emoji') || data.emoji, 56));
     }
   });
-  // picture: upload / remove without losing unsaved form edits
-  const setCaseImage = (img) => {
-    data.image = img;
+  // picture: upload / remove without losing unsaved form edits (without an upload the built-in art shows)
+  const setCaseImage = (c) => {
+    data.image = c ? c.image : null;
+    data.hasUpload = !!(c && c.hasUpload);
     const f = new FormData(form);
     const color = /^#[0-9a-f]{6}$/i.test(f.get('color')) ? f.get('color') : data.color;
     C.render(body.querySelector('#cPreview'), C.caseArt({ ...data, color, emoji: f.get('emoji') || data.emoji }, 56));
@@ -363,7 +364,7 @@ async function caseEditor(body, id) {
       const r = await C.API.post(`/admin/cases/${data.id}/image`, { dataUrl });
       await C.reloadCatalog();
       if (!body.isConnected) return;
-      setCaseImage(r.case.image);
+      setCaseImage(r.case);
       C.toast(C.t('a.saved'), 'ok');
     } catch (err) {
       adminError(err);
@@ -372,10 +373,10 @@ async function caseEditor(body, id) {
   body.querySelector('#cImgRow')?.addEventListener('click', async (e) => {
     if (!e.target.closest('#cImgDel')) return;
     try {
-      await C.API.del(`/admin/cases/${data.id}/image`);
+      const r = await C.API.del(`/admin/cases/${data.id}/image`);
       await C.reloadCatalog();
       if (!body.isConnected) return;
-      setCaseImage(null);
+      setCaseImage(r && r.case);
     } catch (err) {
       adminError(err);
     }

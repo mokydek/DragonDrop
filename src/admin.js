@@ -159,6 +159,7 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
       enabled: c.enabled,
       category_id: c.category_id,
       image: game.caseImage(c),
+      hasUpload: !!c.has_image, // a picture uploaded here (the built-in art is not one)
       items: c.items
         .map((e) => ({ itemId: e.item_id, chance: e.chance }))
         .sort((a, b) => (game.catalog.items.get(b.itemId)?.value || 0) - (game.catalog.items.get(a.itemId)?.value || 0)),

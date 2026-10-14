@@ -518,11 +518,28 @@ html.halloween .logo-pk svg { display: block; width: 100%; height: auto; }
 @media (hover: hover) {
   .case-card:hover { --edge: var(--cc); }
   .case-card:hover .case-art { transform: translateY(-3px); }
+  .case-card:hover .case-art.has-img { transform: none; }
+  .case-card:hover .case-art.has-img .case-img { transform: scale(1.05); }
 }
 .chest .emo { font-size: 19px; }
 /* case picture uploaded in the admin panel (aspect ~1.18, same as the case artwork) */
 .case-img { display: block; height: auto; aspect-ratio: 20 / 17; object-fit: cover; }
 .case-art .case-img { width: 100%; }
+/* a case picture fills the top of the tile edge to edge and melts into it below; the edges of its own
+   dark backdrop fade out wherever it sits on a plate of a different shade */
+.case-art.has-img { width: calc(100% + 12px); margin: -10px -6px 0; filter: none; overflow: hidden; }
+.case-art.has-img .case-img {
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+  transition: transform 0.3s;
+}
+.case-art.has-img + .case-name { margin-top: -2px; }
+.case-hero .case-img, .free-chest .case-img, .src-art .case-img {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent), linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent), linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+  mask-composite: intersect;
+}
 .row-art .case-img { width: 44px; }
 .form-head .case-img { width: 64px; }
 

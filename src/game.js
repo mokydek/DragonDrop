@@ -12,6 +12,8 @@ export class GameError extends Error {
 
 export const cryptoRng = { int: (max) => crypto.randomInt(0, max) };
 export const OPEN_COUNTS = [1, 2, 3, 5]; // openings of one case at once
+/** Built-in case art: case slug -> version of web/img/cases/<slug>.webp (bump it when the picture changes). */
+export const CASE_ART = { noob: 1, pro: 1, dlc: 1, halloween: 1, summer: 1, dragon: 1, mushroom: 1, griffin: 1 };
 
 /** Letters and digits only, in lower case: "Dragon_Drop" and "dragon drop" both give "dragondrop". */
 export function nickKey(s) {
@@ -71,8 +73,10 @@ export function createGame({ db, settings, live, tg, rng = cryptoRng }) {
     };
   }
 
+  /** A picture uploaded in the admin panel, otherwise the built-in art of the case (web/img/cases), if any. */
   function caseImage(c) {
-    return c.has_image ? `/api/img/case/${c.id}?v=${c.img_ver.slice(0, 8)}` : null;
+    if (c.has_image) return `/api/img/case/${c.id}?v=${c.img_ver.slice(0, 8)}`;
+    return CASE_ART[c.slug] ? `img/cases/${c.slug}.webp?v=${CASE_ART[c.slug]}` : null;
   }
 
   function publicCase(c) {
