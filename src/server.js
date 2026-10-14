@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
-import { createDb, migrate, addNickCaseOnce, addShareCaseOnce } from './db.js';
+import { createDb, migrate, addNickCaseOnce, addShareCaseOnce, marketPricesOnce } from './db.js';
 import { createSettings, lowerLuckOnce, tuneRocketOnce, diceFromFiveOnce } from './settings.js';
 import { createGame } from './game.js';
 import { createLive } from './live.js';
@@ -65,6 +65,7 @@ export async function createServer(env = process.env, overrides = {}) {
   await addNickCaseOnce(db, settings).catch((e) => console.warn('[db] nick case:', e.message));
   await addShareCaseOnce(db, settings).catch((e) => console.warn('[db] share case:', e.message));
   await levelsOnce(db, settings).catch((e) => console.warn('[db] referral levels:', e.message));
+  await marketPricesOnce(db, settings).catch((e) => console.warn('[db] market prices:', e.message));
 
   const holder = { bot: null, game: null };
   const tg = overrides.tg || createTg(() => holder.bot, config);
