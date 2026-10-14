@@ -736,7 +736,7 @@ test('static files: the page, scripts and styles are re-checked on every load (3
     assert.ok(r.headers.etag, path);
     assert.equal((await get(path, { 'If-None-Match': r.headers.etag })).status, 304, path);
   }
-  for (const path of ['/img/logo.jpg', '/fonts/rubik-latin-700-normal.woff2']) {
+  for (const path of ['/img/logo.jpg', '/fonts/manrope-latin-700-normal.woff2', '/fonts/unbounded-cyrillic-800-normal.woff2']) {
     const r = await get(path);
     assert.equal(r.status, 200, path);
     assert.equal(r.headers['cache-control'], 'public, max-age=3600', path);
