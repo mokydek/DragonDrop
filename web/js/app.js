@@ -8,7 +8,7 @@ import { fireworks } from './fireworks.js';
 
 // ------------------------------------------------------------------ themes
 export const THEMES = {
-  // the DragonDrop look: dragon gold on obsidian, embers from the lava glow
+  // the DragonDrop look: dragon gold and fire on obsidian
   sunset: { a1: '#FFD23F', a2: '#FF7A1A', on: '#1d1300', bg1: '#0c0a0b', bg2: '#2a1509', bubble: '255,168,64' },
   graphite: { a1: '#E9EBEF', a2: '#8E96A3', on: '#0b0c0e', bg1: '#08090b', bg2: '#1d2027', bubble: '225,230,240' },
   mint: { a1: '#34F5A4', a2: '#1E90FF', on: '#00140d', bg1: '#02151a', bg2: '#05364a', bubble: '140,255,225' },
@@ -105,8 +105,9 @@ function applyTheme(name, { save = false } = {}) {
   r.setProperty('--a1-soft', rgba(th.a1, 0.18));
   r.setProperty('--a2-soft', rgba(th.a2, 0.18));
   r.setProperty('--a1-glow', rgba(th.a1, 0.45));
-  r.setProperty('--a1-faint', rgba(th.a1, 0.07)); // the dragon scales in the background
-  r.setProperty('--a2-glow', rgba(th.a2, 0.3)); // the lava glow at the bottom
+  r.setProperty('--a1-faint', rgba(th.a1, 0.06)); // the lattice in the background
+  r.setProperty('--a1-line', rgba(th.a1, 0.4)); // gold edges of the plates that matter
+  r.setProperty('--a2-glow', rgba(th.a2, 0.3)); // the warm light from the top
   r.setProperty('--glass', rgba(th.bg1, 0.74));
   document.documentElement.dataset.theme = S.theme;
   setBubbleTint(th.bubble);
@@ -206,7 +207,7 @@ function showMaintenance() {
     $('#app'),
     html`<div class="splash">
       <img class="splash-logo" src="img/logo.jpg" alt="" width="120" height="120">
-      <div class="splash-name">DragonDrop</div>
+      <div class="splash-name"><span>Dragon</span><span>Drop</span></div>
       <div class="splash-note">${t('e.maintenance')}</div>
     </div>`,
   );
@@ -305,18 +306,19 @@ function shell() {
   render(
     $('#app'),
     html`
-    <header class="top">
+    <header class="top${adminUi() ? ' adm' : ''}">
       <span class="hw-web l" aria-hidden="true">${raw(webSvg(64))}</span>
       <span class="hw-web r" aria-hidden="true">${raw(webSvg(64))}</span>
       <span class="hw-spider" aria-hidden="true"><i></i>${raw(SPIDER)}</span>
       <div class="brand">
-        <span class="logo-wrap"><img class="logo" src="img/logo.jpg" alt="" width="38" height="38"><span class="logo-pk" aria-hidden="true">${raw(PUMPKIN)}</span></span>
+        <span class="logo-wrap"><img class="logo" src="img/logo.jpg" alt="" width="40" height="40"><span class="logo-pk" aria-hidden="true">${raw(PUMPKIN)}</span></span>
         <div class="brand-text">
-          <div class="brand-name">DragonDrop</div>
+          <div class="brand-name"><span>Dragon</span><span>Drop</span></div>
         </div>
       </div>
       <div class="top-actions">
         <button class="bal" data-act="topup" aria-label="${t('topup')}">${coin(18)}<b id="bal" class="priv"></b><span class="plus">+</span></button>
+        ${adminUi() ? html`<button class="icon-btn adm-btn" data-tab="admin" aria-label="${t('tab.admin')}">${raw(ICON.admin)}</button>` : ''}
         <button class="icon-btn lang-btn" data-act="lang" id="langBtn" aria-label="${t('language')}"></button>
         <button class="icon-btn" data-act="theme" id="themeBtn" aria-label="${t('theme')}">${raw(ICON.palette)}</button>
       </div>
@@ -356,14 +358,25 @@ function setBalance(n) {
   }
 }
 
+/**
+ * The dock at the bottom: the cases in the middle on a raised hexagon, two games on each side. The
+ * admin panel is the shield in the header (admins only).
+ */
+const DOCK = ['upgrade', 'crash', 'cases', 'dice', 'profile'];
 function renderTabbar() {
   const cur = route().tab;
-  const tabs = ['cases', 'upgrade', 'crash', 'dice', 'profile'].concat(adminUi() ? ['admin'] : []);
-  $('#tabbar').classList.toggle('n6', tabs.length > 5);
   render(
     $('#tabbar'),
-    html`${tabs.map((k) => html`<button class="${cur === k ? 'on' : ''}" data-tab="${k}">${raw(ICON[k])}<span>${t('tab.' + k)}</span></button>`)}`,
+    html`${DOCK.map(
+      (k) => html`<button class="${cur === k ? 'on' : ''}${k === 'cases' ? ' hub' : ''}" data-tab="${k}"><i class="tb-ico">${raw(ICON[k])}</i><span>${t('tab.' + k)}</span></button>`,
+    )}`,
   );
+  markTabs(cur);
+}
+
+/** The current tab lit in the dock and on the admin shield. */
+function markTabs(cur) {
+  $$('#tabbar [data-tab], .top [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === cur));
 }
 
 // ------------------------------------------------------------------ live drops
@@ -451,7 +464,7 @@ async function renderView() {
   closePop();
   clearTimers();
   const r = route();
-  $$('#tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === r.tab));
+  markTabs(r.tab);
   $('#live')?.classList.toggle('hidden', r.tab === 'admin');
   const back = r.view === 'case' || r.view === 'refs' || (r.view === 'admin' && r.id);
   try {
@@ -805,8 +818,9 @@ function viewCase(view, id) {
   render(
     view,
     html`
-    <div class="view-head">
+    <div class="view-head case-hero${openCount(c) > 1 ? ' compact' : ''}" style="--cc:${c.color};--cca:${rgba(c.color, 0.34)}">
       <button class="back" data-act="back" aria-label="${t('back')}">${raw(ICON.back)}</button>
+      <div class="vh-art${c.image ? ' has-img' : ''}">${caseImg(c, 112)}</div>
       <div class="vh-title">${caseName(c)}</div>
       <div class="vh-price">${noPrice(c) ? 'FREE' : money(c.price, 15)}</div>
     </div>
@@ -844,8 +858,9 @@ function refreshOpenRow(c, { keepStrips = false } = {}) {
   if (!keepStrips) setRoulettes(c);
 }
 
-/** Shows as many idle strips as there will be openings. */
+/** Shows as many idle strips as there will be openings (with several the case head gets small). */
 function setRoulettes(c, n = openCount(c)) {
+  $('.case-hero')?.classList.toggle('compact', n > 1);
   const wrap = $('#roulettes');
   if (!wrap || wrap.children.length === n) return;
   wrap.className = `roulettes n${n}`;
@@ -1159,9 +1174,10 @@ function viewUpgrade(view) {
     <div class="gauge-wrap">
       <svg class="gauge" viewBox="0 0 200 200" aria-hidden="true">
         <defs><linearGradient id="gGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--a1)"/><stop offset="1" style="stop-color:var(--a2)"/></linearGradient></defs>
+        <circle class="g-ticks" cx="100" cy="100" r="97"/>
         <circle class="g-bg" cx="100" cy="100" r="${GAUGE_R}"/>
         <circle class="g-win" id="gWin" cx="100" cy="100" r="${GAUGE_R}" stroke-dasharray="0 ${GAUGE_C}"/>
-        <g class="g-ptr" id="gPtr"><path d="M100 4l8 15h-16z"/></g>
+        <g class="g-ptr" id="gPtr"><path d="M100 5l8 11-8 11-8-11z"/></g>
       </svg>
       <div class="g-center"><div class="g-pct" id="gPct">0%</div><div class="g-lbl">${t('chance')}</div></div>
     </div>
@@ -2760,7 +2776,7 @@ function splash(noteKey) {
     $('#app'),
     html`<div class="splash">
       <img class="splash-logo" src="img/logo.jpg" alt="" width="120" height="120">
-      <div class="splash-name">DragonDrop</div>
+      <div class="splash-name"><span>Dragon</span><span>Drop</span></div>
       <div class="splash-note" id="splashNote">${t(noteKey || 'loading')}</div>
     </div>`,
   );
@@ -2777,7 +2793,7 @@ async function showNoAuth() {
     $('#app'),
     html`<div class="splash">
       <img class="splash-logo" src="img/logo.jpg" alt="" width="120" height="120">
-      <div class="splash-name">DragonDrop</div>
+      <div class="splash-name"><span>Dragon</span><span>Drop</span></div>
       <div class="splash-note">${t('openInTg')}</div>
       ${bot ? html`<a class="btn primary big" href="https://t.me/${bot}">${t('openBot')}</a>` : ''}
     </div>`,
@@ -2858,7 +2874,7 @@ async function boot() {
       $('#app'),
       html`<div class="splash">
         <img class="splash-logo" src="img/logo.jpg" alt="" width="120" height="120">
-        <div class="splash-name">DragonDrop</div>
+        <div class="splash-name"><span>Dragon</span><span>Drop</span></div>
         <div class="splash-note">${errorText(e)}</div>
         ${e.code !== 'banned' && e.code !== 'unauthorized' ? html`<button class="btn primary big" onclick="location.reload()">${t('retry')}</button>` : ''}
       </div>`,
