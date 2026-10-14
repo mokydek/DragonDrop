@@ -503,10 +503,15 @@ test('admin: case categories — create, fill, rename, move a case, delete', asy
   await app.del(`/api/admin/categories/${cheap.body.category.id}`, A);
 });
 
-test('admin: case picture upload, public URL, removal', async () => {
+test('admin: case picture upload, public URL, removal; without an upload the built-in art shows', async () => {
   const admin = users.alice;
   const dragon = (await app.get('/api/admin/cases', { user: admin })).body.cases.find((c) => c.slug === 'dragon');
-  assert.equal(dragon.image, null);
+  assert.equal(dragon.image, 'img/cases/dragon.webp?v=1');
+  assert.equal(dragon.hasUpload, false);
+  // the built-in art is a file of the web app
+  const art = await fetch(app.base + '/' + dragon.image);
+  assert.equal(art.status, 200);
+  assert.match(art.headers.get('content-type'), /^image\/webp/);
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   // players cannot upload, bad data is rejected, unknown case is 404
   assert.equal((await app.post(`/api/admin/cases/${dragon.id}/image`, { user: users.bob, body: { dataUrl: png } })).status, 403);
@@ -516,13 +521,16 @@ test('admin: case picture upload, public URL, removal', async () => {
   const up = await app.post(`/api/admin/cases/${dragon.id}/image`, { user: admin, body: { dataUrl: png } });
   assert.equal(up.status, 200, JSON.stringify(up.body));
   assert.match(up.body.case.image, new RegExp(`^/api/img/case/${dragon.id}\\?v=[0-9a-f]{8}$`));
+  assert.equal(up.body.case.hasUpload, true);
   // the rest of the case is untouched
   assert.equal(up.body.case.price, dragon.price);
   assert.equal(up.body.case.items.length, dragon.items.length);
 
   const pub = (await app.get('/api/catalog', { user: users.bob })).body.cases.find((c) => c.slug === 'dragon');
   assert.equal(pub.image, up.body.case.image);
-  assert.equal((await app.get('/api/catalog', { user: users.bob })).body.cases.find((c) => c.slug === 'noob').image, null);
+  const others = (await app.get('/api/catalog', { user: users.bob })).body.cases;
+  assert.equal(others.find((c) => c.slug === 'noob').image, 'img/cases/noob.webp?v=1');
+  assert.equal(others.find((c) => c.slug === 'free').image, null, 'no art yet: the chest in the case colour');
   const img = await fetch(app.base + pub.image);
   assert.equal(img.status, 200);
   assert.equal(img.headers.get('content-type'), 'image/png');
@@ -536,9 +544,9 @@ test('admin: case picture upload, public URL, removal', async () => {
 
   const del = await app.del(`/api/admin/cases/${dragon.id}/image`, { user: admin });
   assert.equal(del.status, 200);
-  assert.equal(del.body.case.image, null);
+  assert.deepEqual([del.body.case.image, del.body.case.hasUpload], ['img/cases/dragon.webp?v=1', false], 'back to the built-in art');
   assert.equal((await fetch(app.base + pub.image)).status, 404);
-  assert.equal((await app.get('/api/catalog', { user: users.bob })).body.cases.find((c) => c.slug === 'dragon').image, null);
+  assert.equal((await app.get('/api/catalog', { user: users.bob })).body.cases.find((c) => c.slug === 'dragon').image, 'img/cases/dragon.webp?v=1');
 });
 
 test('admin: items, images, players, balance, bans, gifts', async () => {
