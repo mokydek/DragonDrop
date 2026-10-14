@@ -683,7 +683,10 @@ test('rocket: launch, the multiplier grows, a cash-out pays what the server coun
   await demo.app.setBalance(ME.id, 1000);
   const { page, errors } = await open({ path: '/#/crash' });
   await page.waitForSelector('#crBtn');
-  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Кейсы', 'Апгрейдер', 'Ракета', 'Дайсы', 'Профиль', 'Админ']);
+  // the dock: the cases in the middle; the admin panel is the shield in the header
+  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Апгрейдер', 'Ракета', 'Кейсы', 'Дайсы', 'Профиль']);
+  assert.equal(await page.getAttribute('#tabbar .hub', 'data-tab'), 'cases');
+  assert.equal(await page.locator('.top [data-tab="admin"]').count(), 1);
   assert.equal(await page.getAttribute('#tabbar button.on', 'data-tab'), 'crash');
   assert.equal(await page.textContent('#crMult'), '1,00x');
   assert.equal(await page.textContent('#crBtn'), 'Запустить');
@@ -1689,7 +1692,8 @@ test('language switch: UA and EN texts, saved on the server', { skip }, async ()
   await page.click('#langBtn');
   await page.click('[data-lang="en"]');
   await page.waitForSelector('.case-grid');
-  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Cases', 'Upgrader', 'Rocket', 'Dice', 'Profile', 'Admin']);
+  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Upgrader', 'Rocket', 'Cases', 'Dice', 'Profile']);
+  assert.equal(await page.getAttribute('.top [data-tab="admin"]', 'aria-label'), 'Admin');
   assert.equal(await page.textContent('.case-name >> nth=0'), 'DragonDrop in nick');
   assert.equal(await page.textContent('.case-name >> nth=1'), 'Share case');
   assert.equal(await page.textContent('.case-name >> nth=2'), 'Noob case');
@@ -1701,7 +1705,8 @@ test('language switch: UA and EN texts, saved on the server', { skip }, async ()
   await page.click('#langBtn');
   await page.click('[data-lang="uk"]');
   await page.waitForSelector('.case-grid');
-  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Кейси', 'Апгрейдер', 'Ракета', 'Дайси', 'Профіль', 'Адмін']);
+  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Апгрейдер', 'Ракета', 'Кейси', 'Дайси', 'Профіль']);
+  assert.equal(await page.getAttribute('.top [data-tab="admin"]', 'aria-label'), 'Адмін');
   assert.equal(await page.textContent('.case-name >> nth=0'), 'DragonDrop у ніку');
   assert.equal(await page.textContent('.case-name >> nth=1'), 'Кейс за репости');
   assert.equal(await page.textContent('.case-name >> nth=4'), 'Рибний кейс');
@@ -2189,7 +2194,8 @@ test('main admin: switches off sections for the other admins; they lose those ta
 test('non-admins have no admin tab and cannot open it', { skip }, async () => {
   const { page } = await open({ user: demo.others[1], path: '/#/admin/cases' });
   await page.waitForSelector('.case-grid');
-  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Кейсы', 'Апгрейдер', 'Ракета', 'Дайсы', 'Профиль']);
+  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Апгрейдер', 'Ракета', 'Кейсы', 'Дайсы', 'Профиль']);
+  assert.equal(await page.locator('[data-tab="admin"]').count(), 0, 'no admin shield');
   await page.context().close();
 });
 
@@ -2940,7 +2946,7 @@ test('colour dice: a tab of its own; pick a colour, stake coins; the dice land o
   const { page, errors } = await open({ path: '/#/dice' });
   await page.waitForSelector('#dcBtn');
   await page.evaluate(OFFLINE_AUDIO);
-  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Кейсы', 'Апгрейдер', 'Ракета', 'Дайсы', 'Профиль', 'Админ']);
+  assert.deepEqual(await page.locator('#tabbar span').allTextContents(), ['Апгрейдер', 'Ракета', 'Кейсы', 'Дайсы', 'Профиль']);
   assert.equal(await page.getAttribute('#tabbar button.on', 'data-tab'), 'dice');
   // before the first throw: three blank dice, six colours (red picked), what 1 / 2 / 3 dice pay
   assert.deepEqual(await page.locator('#dcStage .die').allTextContents(), ['?', '?', '?']);
@@ -3109,7 +3115,8 @@ test('small phones (360px): no horizontal scrolling anywhere', { skip }, async (
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert.equal(over, 0, `${h} overflows by ${over}px`);
   }
-  // six tabs (an admin) fit the bar, also on a 320px phone; the dice colour names are not cut
+  // the dock (five tabs) and the header with the admin shield fit, also on a 320px phone; no dock label
+  // and no dice colour name is cut
   for (const width of [360, 320]) {
     await page.setViewportSize({ width, height: 740 });
     await page.evaluate(() => (location.hash = '#/dice'));
@@ -3117,15 +3124,21 @@ test('small phones (360px): no horizontal scrolling anywhere', { skip }, async (
     const fit = await page.evaluate(() => {
       const bar = document.querySelector('#tabbar').getBoundingClientRect();
       const tabs = [...document.querySelectorAll('#tabbar button')];
+      const brand = document.querySelector('.top .brand').getBoundingClientRect();
+      const acts = [...document.querySelectorAll('.top-actions > *')].map((e) => e.getBoundingClientRect());
       return {
         n: tabs.length,
         inBar: tabs.every((b) => b.getBoundingClientRect().left >= bar.left && b.getBoundingClientRect().right <= bar.right),
-        labels: tabs.every((b) => b.querySelector('span').getBoundingClientRect().width <= b.getBoundingClientRect().width),
+        labels: tabs.every((b) => {
+          const s = b.querySelector('span');
+          return s.scrollWidth <= s.clientWidth && s.getBoundingClientRect().width <= b.getBoundingClientRect().width;
+        }),
+        header: !!document.querySelector('.top [data-tab="admin"]') && brand.right <= acts[0].left && acts.every((r) => r.left >= 0 && r.right <= innerWidth),
         chips: [...document.querySelectorAll('.dc-chip span')].filter((e) => e.scrollWidth > e.clientWidth).map((e) => e.textContent),
         over: document.documentElement.scrollWidth - window.innerWidth,
       };
     });
-    assert.deepEqual(fit, { n: 6, inBar: true, labels: true, chips: [], over: 0 }, `${width}px`);
+    assert.deepEqual(fit, { n: 5, inBar: true, labels: true, header: true, chips: [], over: 0 }, `${width}px`);
   }
   // top-up and withdrawal sheets
   for (const steps of [['[data-act="topup"]'], ['[data-act="topup"]', '[data-act="tu-stars"]'], ['[data-act="topup"]', '[data-act="tu-brainrots"]']]) {
