@@ -78,37 +78,50 @@ test('drop chances: 300k openings of every case match the configured odds (chi-s
   }
 });
 
-test('drop chances: cases return ~90% (free case EV 8)', () => {
+test('drop chances: a paid case returns ~90 % (its price is the nearest whole number of coins), the FREE case ~9 coins', () => {
   const seed = JSON.parse(readFileSync(new URL('../src/seed-data.json', import.meta.url)));
   const value = new Map(seed.items.map((i) => [i.name, i.value]));
   for (const c of seed.cases) {
     const ev = c.items.reduce((s, e) => s + (value.get(e.item) * e.chance) / 100, 0);
-    if (c.price === 0) assert.ok(Math.abs(ev - 8) < 0.05, `free EV ${ev}`);
-    else assert.ok(Math.abs(ev / c.price - 0.9) < 0.002, `${c.slug} RTP ${ev / c.price}`);
+    if (c.price === 0) assert.ok(Math.abs(ev - 9.17) < 0.01, `free EV ${ev}`);
+    else assert.equal(c.price, Math.round(ev / 0.9), `${c.slug} RTP ${ev / c.price}`);
   }
   const prices = Object.fromEntries(seed.cases.map((c) => [c.slug, c.price]));
-  assert.deepEqual(prices, { free: 0, noob: 10, pro: 25, fish: 65, dlc: 200, halloween: 250, summer: 350, dragon: 450, mushroom: 750, griffin: 2000 });
-  // the owner's price list (01.10.2026) — every entry is in the catalogue with exactly this price
+  assert.deepEqual(prices, { free: 0, noob: 11, pro: 24, fish: 30, dlc: 135, halloween: 157, summer: 223, dragon: 178, mushroom: 383, griffin: 1160 });
+  // market prices (FunPay, October 2026): the median price of the plain brainrot in rubles at 1.65 ₽ per
+  // Telegram Star, 1 Star = 1 coin; the ones nobody sells (bought in the game itself) by rarity, from 1 coin
   const priceList = {
-    Lavaka: 5, 'Candy Slap': 7, 'Divane Slap': 9, 'Spaghetti Tualetti': 10, 'Tralalero Tralala': 15, 'Ketupat Kepat': 20,
-    'Ketchuru and Musturu': 22, 'Ventoliero Pavonero': 30, 'Lava Blaster': 31, 'Los Planitos': 32, 'Los Mariachis': 39, Eviledon: 42,
-    'W or L': 40, 'Los Bros': 35, 'Gold Gold Gold': 46, 'La Ginger Sekolah': 47, 'Los Primos': 55, 'Pizza and Ranch': 57,
-    'La Secret Combinasion': 60, 'Wave Rider': 61, "Cupid's Wings": 61, 'Garama and Madundung': 65, "Witch's Broom": 61, 'Cash or Card': 65,
-    "Santa's Sleigh": 80, 'Los Tacoritas': 95, 'Burguro and Fryuro': 100, 'La Food Combinasion': 103, 'Pop Pop Petalini': 105,
-    'La Taco Combinasion': 125, 'Capitano Moby': 140, 'Popcuru and Fizzuru': 140, 'Celestial Pegasus': 140, 'Lovin Rose': 110, Cerberus: 150,
-    'Boppin Bunny': 130, 'Fragola La La La': 160, 'Cooki and Milki': 190, 'Spooky and Pumpky': 200, 'Globa Steppa': 234, 'Reinito Sleighito': 280,
-    'Los Amigos': 320, 'Bearito Cabinito': 350, 'Examen Bros': 400, 'La Breakfast Combinasion': 450, 'Rico Dinero': 500, 'Foxini Lanternini': 540,
-    Venuspino: 555, 'Los Chillis': 600, Bumbatron: 625, 'Rosey and Teddy': 680, 'La Casa Boo': 721, 'Dug Dug Dug': 500, 'Rainbow Hammer': 520,
-    'Ketupat Bros': 810, 'Dragon Cannelloni': 1100, 'Bloodmoon Hammer': 1170, Grabatron: 1300, 'Hydra Dragon Cannelloni': 1350, 'Jelly Moby': 1482,
-    'Bunny and Eggy': 1606, 'Pancake and Syrup': 1850, 'Tirillikalika Tirillikalako': 1850, 'Hydra Bunny': 2400, 'La Supreme Combinasion': 2450,
-    Kraken: 2500, 'Moby Bros': 2600, 'Digi Narwhal': 2700, 'Fishino Clownino': 3000, 'Kalika Bros': 4000, Griffin: 5000, Orchidox: 6000,
-    'Love Love Bear': 8500, Arcadragon: 12500, 'Elefanto Frigo': 13500, 'Skibidi Toilet': 16500, 'John Pork': 18500, Meowl: 20000,
-    'Strawberry Elephant': 50000,
+    Fluriflura: 1, 'Lirilì Larilà': 1, 'Noobini Pizzanini': 1, 'Pipi Kiwi': 1, 'Svinina Bombardino': 1, 'Talpa Di Fero': 1, 'Tim Cheese': 1,
+    'Bandito Bobritto': 2, 'Boneca Ambalabu': 2, 'Cacto Hipopotamo': 2, 'Gangster Footera': 2, 'Ta Ta Ta Ta Sahur': 2,
+    'Tric Trac Baraboom': 2, 'Trippi Troppi': 2, 'Avocadini Guffo': 3, 'Bambini Crostini': 3, 'Bananita Dolphinita': 3,
+    'Brr Brr Patapim': 3, 'Brri Brri Bicus Dicus Bombicus': 3, 'Cappuccino Assassino': 3, Lavaka: 3, 'Perochello Lemonchello': 3,
+    'Salamino Penguino': 3, 'Trulimero Trulicina': 3, 'Ballerina Cappuccina': 4, 'Blueberrinni Octopusini': 4, 'Burbaloni Loliloli': 4,
+    'Chef Crabracadabra': 4, 'Chimpanzini Bananini': 4, 'Cocosini Mama': 4, 'Glorbo Fruttodrillo': 4, 'Lionel Cactuseli': 4,
+    'Strawberelli Flamingelli': 4, 'Bombardiro Crocodilo': 5, 'Bombombini Gusini': 6, 'Frigo Camelo': 6, 'Gorillo Watermelondrillo': 6,
+    'Orangutini Ananassini': 6, 'Rhino Toasterino': 6, 'Tigrilini Watermelini': 6, 'Cavallo Virtuoso': 8, 'Cocofanto Elefanto': 8,
+    'La Vacca Saturno Saturnita': 8, Matteo: 8, 'Girafa Celestre': 9, 'Gattatino Neonino': 10, 'Odin Din Din Dun': 10,
+    'Orcalero Orcala': 11, 'Chimpanzini Spiderini': 14, 'Graipuss Medussi': 17, 'Trenostruzzo Turbo 3000': 17, 'Tung Tung Tung Sahur': 20,
+    'La Grande Combinasion': 21, 'Tralalero Tralala': 21, 'Los Tralaleritos': 22, 'Pot Hotspot': 22, 'Los Mariachis': 28,
+    'Ketupat Kepat': 30, 'Nuclearo Dinossauro': 30, 'La Ginger Sekolah': 33, 'Spaghetti Tualetti': 33, 'Candy Slap': 36, 'Divane Slap': 36,
+    'Ketchuru and Musturu': 36, 'Los Planitos': 38, 'La Taco Combinasion': 42, 'Gold Gold Gold': 47, 'Ventoliero Pavonero': 47,
+    'Esok Sekolah': 48, 'Lava Blaster': 50, Eviledon: 51, 'Lovin Rose': 53, 'Los Tacoritas': 54, 'Wave Rider': 55, 'Cash or Card': 64,
+    'W or L': 73, "Witch's Broom": 73, "Cupid's Wings": 74, 'Pizza and Ranch': 77, 'Los Primos': 78, 'Fragola La La La': 81,
+    'Burguro and Fryuro': 91, 'Los Combinasionas': 95, 'Pop Pop Petalini': 100, 'Boppin Bunny': 102, 'Globa Steppa': 102,
+    'Garama and Madundung': 104, 'Popcuru and Fizzuru': 109, 'Los Bros': 116, 'La Secret Combinasion': 122, 'Capitano Moby': 124,
+    "Santa's Sleigh": 136, 'Los Chillis': 170, 'Bearito Cabinito': 178, Cerberus: 182, 'La Food Combinasion': 239, 'Examen Bros': 255,
+    'Spooky and Pumpky': 262, 'Celestial Pegasus': 309, 'Los Amigos': 321, 'Rico Dinero': 324, 'Dug Dug Dug': 357, 'Cooki and Milki': 370,
+    'Rosey and Teddy': 492, 'Rainbow Hammer': 502, Venuspino: 509, 'La Breakfast Combinasion': 529, 'Foxini Lanternini': 552,
+    'Ketupat Bros': 561, Bumbatron: 583, 'Reinito Sleighito': 693, 'Dragon Cannelloni': 725, Grabatron: 728, 'Pancake and Syrup': 909,
+    'La Casa Boo': 1002, 'Tirillikalika Tirillikalako': 1121, 'Bunny and Eggy': 1153, 'Hydra Dragon Cannelloni': 1221, 'Jelly Moby': 1296,
+    'Digi Narwhal': 1319, 'Bloodmoon Hammer': 1384, 'Hydra Bunny': 1766, 'Fishino Clownino': 2030, Kraken: 2260, 'Moby Bros': 2389,
+    'La Supreme Combinasion': 2582, 'Kalika Bros': 2614, Griffin: 2692, 'Love Love Bear': 5171, Arcadragon: 6646, 'Elefanto Frigo': 8182,
+    Orchidox: 9419, 'Skibidi Toilet': 10309, Meowl: 13254, 'John Pork': 13506, 'Strawberry Elephant': 31367,
   };
-  assert.equal(Object.keys(priceList).length, 79);
+  assert.equal(Object.keys(priceList).length, 136);
   for (const [n, v] of Object.entries(priceList)) assert.equal(value.get(n), v, n);
   assert.equal(seed.items.length, 136);
   assert.equal(value.size, 136, 'item names are unique');
+  for (const i of seed.items) assert.ok(Number.isInteger(i.value) && i.value >= 1, i.name);
   // every item drops from at least one case
   const inCases = new Set(seed.cases.flatMap((c) => c.items.map((e) => e.item)));
   for (const i of seed.items) assert.ok(inCases.has(i.name), `${i.name} is in no case`);

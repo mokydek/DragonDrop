@@ -260,19 +260,19 @@ test('account bad luck: only the main admin sees and sets it; that player gets t
   assert.equal(boot.upgrade.luck, 2.12);
   assert.ok(!('luck' in boot.me) && !('upgrade_luck' in boot.me));
   assert.equal((await app.get('/api/catalog', { user: users.bob })).body.upgrade.luck, 1.06);
-  // the upgrade rolls the very chance that player is shown: 55 / 200 * 90 = 24.75% -> / 2.12 = 11.67%
+  // the upgrade rolls the very chance that player is shown: 72 / 324 * 90 = 20% -> / 2.12 = 9.43%
   const item = (name) => [...app.ctx.game.catalog.items.values()].find((i) => i.name === name).id;
   const put = async (name) =>
     (await app.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [p.id, item(name)])).id;
-  const ids = [await put('Salamino Penguino'), await put('Chimpanzini Bananini')];
-  const target = item('Spooky and Pumpky');
-  const stale = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 23.34 } });
+  const ids = [await put('Ketupat Kepat'), await put('La Taco Combinasion')];
+  const target = item('Rico Dinero');
+  const stale = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 18.86 } });
   assert.equal(stale.status, 409);
-  assert.equal(stale.body.chance, 11.67);
-  const up = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 11.67 } });
+  assert.equal(stale.body.chance, 9.43);
+  const up = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 9.43 } });
   assert.equal(up.status, 200, JSON.stringify(up.body));
-  assert.equal(up.body.chance, 11.67);
-  assert.equal((await app.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [p.id])).chance, 11.67);
+  assert.equal(up.body.chance, 9.43);
+  assert.equal((await app.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [p.id])).chance, 9.43);
   // back to normal
   assert.deepEqual((await app.post(`/api/admin/users/${p.id}/luck`, { user: owner, body: { luck: '1' } })).body, { luck: 1 });
   assert.equal((await app.get('/api/catalog', { user: p })).body.upgrade.luck, 1.06);

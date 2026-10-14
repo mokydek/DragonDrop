@@ -332,12 +332,12 @@ test('withdraw: brainrots leave the inventory and are held by the request', asyn
   assert.equal(w.kind, 'withdraw');
   assert.deepEqual(r.body.removed.sort(), [ids[0], ids[2]].sort());
   assert.deepEqual(w.items.map((i) => i.name), ['Cerberus', 'Capitano Moby']);
-  assert.equal(w.total, 150 + 140);
+  assert.equal(w.total, 182 + 124);
   assert.equal(w.exchange, null);
   assert.equal(r.body.rest, 0);
   const left = (await app.get('/api/inventory', { user: other })).body.inventory;
   assert.deepEqual(left.map((i) => i.item.name), ['Garama and Madundung']);
-  assert.match(lastSent(other.id).text, /^📤 Заявку на виведення #\d+ прийнято\.\n\nНік у Roblox: BobR\nБрейнроти: Cerberus, Capitano Moby\nНа суму: 290 🪙\n\nАдміністратор/);
+  assert.match(lastSent(other.id).text, /^📤 Заявку на виведення #\d+ прийнято\.\n\nНік у Roblox: BobR\nБрейнроти: Cerberus, Capitano Moby\nНа суму: 306 🪙\n\nАдміністратор/);
   assert.match(lastSent(admin.id).text, /^🆕 Вывод #\d+/);
   assert.equal(lastSent(admin.id).reply_markup.inline_keyboard[0][0].web_app.url, `https://app.dragondrop.test/?go=admin/withdrawals/${w.id}`);
   const counts = await app.get('/api/admin/requests/counts', { user: admin });
@@ -370,14 +370,14 @@ test('withdraw: only the listed brainrots; others are exchanged for one of them,
   assert.deepEqual(boot.withdrawIds.map((id) => app.ctx.game.catalog.items.get(id).name).sort(), [...allowed].sort());
 
   await app.ctx.db.query('DELETE FROM bs_inventory WHERE user_id = $1', [other.id]);
-  const [croc, goose, garama] = await giveItems(other.id, ['Bombardiro Crocodilo', 'Bombombini Gusini', 'Garama and Madundung']);
-  const all = [croc, goose, garama];
+  const [pot, chillis, garama] = await giveItems(other.id, ['Pot Hotspot', 'Los Chillis', 'Garama and Madundung']);
+  const all = [pot, chillis, garama];
   const body = (extra) => ({ user: other, body: { nick: 'BobR', ids: all, ...extra } });
   await freshWindow();
   const need = await app.post('/api/requests/withdraw', body());
   assert.equal(need.status, 400);
   assert.equal(need.body.error, 'need_exchange');
-  assert.equal(need.body.value, 75 + 85, 'value of the ones that must be exchanged');
+  assert.equal(need.body.value, 22 + 170, 'value of the ones that must be exchanged');
   assert.equal((await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Dragon Cannelloni').id }))).body.error, 'exchange_too_expensive');
   assert.equal((await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Tung Tung Tung Sahur').id }))).body.error, 'not_withdrawable');
   assert.equal((await app.post('/api/requests/withdraw', { user: other, body: { nick: 'BobR', ids: [garama], exchangeTo: itemByName('Cerberus').id } })).body.error, 'bad_request');
@@ -388,20 +388,20 @@ test('withdraw: only the listed brainrots; others are exchanged for one of them,
   app.tg.reset();
   const r = await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Cerberus').id }));
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.rest, 160 - 150);
+  assert.equal(r.body.rest, 192 - 182);
   assert.equal(r.body.balance, before + 10);
   assert.equal(await balance(other.id), before + 10);
   const w = r.body.request;
   assert.deepEqual(w.items.map((i) => i.name), ['Cerberus', 'Garama and Madundung'], 'kept one + the exchange');
-  assert.equal(w.total, 150 + 65);
-  assert.deepEqual(w.exchange.from.map((i) => i.name).sort(), ['Bombardiro Crocodilo', 'Bombombini Gusini']);
+  assert.equal(w.total, 182 + 104);
+  assert.deepEqual(w.exchange.from.map((i) => i.name).sort(), ['Los Chillis', 'Pot Hotspot']);
   assert.equal(w.exchange.rest, 10);
   assert.equal((await app.get('/api/inventory', { user: other })).body.inventory.length, 0);
   const log = await app.ctx.db.one('SELECT delta FROM bs_balance_log WHERE reason = $1', [`exchange:#${w.id}`]);
   assert.equal(log.delta, 10);
-  assert.match(lastSent(other.id).text, /Брейнроти: Cerberus, Garama and Madundung\nНа суму: 215 🪙\nЗалишок на баланс: \+10 🪙/);
+  assert.match(lastSent(other.id).text, /Брейнроти: Cerberus, Garama and Madundung\nНа суму: 286 🪙\nЗалишок на баланс: \+10 🪙/);
   const d = (await app.get(`/api/admin/requests/${w.id}`, { user: admin })).body.request;
-  assert.equal(d.exchange.value, 160);
+  assert.equal(d.exchange.value, 192);
 
   // declined: the withdrawable brainrots come back (the exchange stays done)
   await app.post(`/api/admin/requests/${w.id}/status`, { user: admin, body: { status: 'rejected' } });

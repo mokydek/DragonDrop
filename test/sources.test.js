@@ -40,13 +40,13 @@ test('player card: case, free case, upgrader, admin gift, deposit and returned w
   assert.equal(free.status, 200, JSON.stringify(free.body));
   await app.ctx.settings.update({ free_require_sub: true, free_require_share: true });
 
-  // upgrader: 55 / 200 * 90 = 24.75%, 1.06 times lower = 23.34%; roll 0 wins
+  // upgrader: 72 / 324 * 90 = 20%, 1.06 times lower = 18.86%; roll 0 wins
   const put = async (name) =>
     (await app.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [player.id, itemByName(name).id])).id;
-  const a = await put('Salamino Penguino');
-  const b = await put('Chimpanzini Bananini');
+  const a = await put('Ketupat Kepat');
+  const b = await put('La Taco Combinasion');
   rng.queue.push(0);
-  const up = await app.post('/api/upgrade', { user: player, body: { ids: [a, b], target: itemByName('Spooky and Pumpky').id, chance: 23.34 } });
+  const up = await app.post('/api/upgrade', { user: player, body: { ids: [a, b], target: itemByName('Rico Dinero').id, chance: 18.86 } });
   assert.equal(up.body.won, true, JSON.stringify(up.body));
 
   // admin gift
@@ -75,7 +75,7 @@ test('player card: case, free case, upgrader, admin gift, deposit and returned w
   for (const r of caseRows) assert.deepEqual(r.from, { type: 'case', case: { id: noob.id, name: { ru: noob.name_ru, uk: noob.name_uk, en: noob.name_en } } });
   const fc = caseBySlug('free');
   assert.deepEqual(byInv(inv, free.body.invId).from, { type: 'free', case: { id: fc.id, name: { ru: fc.name_ru, uk: fc.name_uk, en: fc.name_en } } });
-  assert.deepEqual(byInv(inv, up.body.invId).from, { type: 'upgrade', upgrade: { chance: 23.34, bet: 55 } });
+  assert.deepEqual(byInv(inv, up.body.invId).from, { type: 'upgrade', upgrade: { chance: 18.86, bet: 72 } });
   assert.deepEqual(byInv(inv, gift.body.invId).from, { type: 'admin', admin: { id: admin.id, name: 'Модер' } });
   assert.deepEqual(fromOf((i) => i.item.name === 'Cerberus'), [{ type: 'deposit', requestId: depId }]);
   assert.deepEqual(fromOf((i) => i.item.name === 'Capitano Moby'), [{ type: 'refund', requestId: wdId }]);
