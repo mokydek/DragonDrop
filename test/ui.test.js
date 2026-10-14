@@ -5,6 +5,7 @@ import { startDemo, loadPlaywright, newPage, ME } from './ui/harness.mjs';
 import { scriptedRng } from './helpers.js';
 import { signWebToken } from '../src/auth.js';
 import { starsPayload } from '../src/requests.js';
+import { ITEM_ART, itemSlug } from '../src/game.js';
 
 let pw = null;
 try {
@@ -1929,6 +1930,84 @@ test('built-in case art: the picture on the tile and on the case page; an upload
   assert.equal((await demo.app.get('/api/admin/cases', { user: ME })).body.cases.find((c) => c.slug === 'dragon').image, 'img/cases/dragon.webp?v=1');
   assert.deepEqual(errors, []);
   await page.context().close();
+});
+
+test('brainrot pictures: on the case page, in the strip and in the result every brainrot has its own picture (the admin sees it too); the ones without one keep the emoji', { skip }, async () => {
+  const noob = demo.bySlug.noob;
+  const byName = new Map([...demo.ctx.game.catalog.items.values()].map((i) => [i.name, i]));
+  const art = (name) => {
+    const slug = itemSlug(name);
+    return ITEM_ART.has(slug) ? `img/items/${slug}.webp?v=${ITEM_ART.get(slug)}` : null;
+  };
+  const balance = (await apiMe()).me.balance;
+  await demo.app.setBalance(ME.id, 1250);
+  const { page, errors } = await open({ path: `/#/case/${noob.id}` });
+  await page.waitForSelector('#caseItems .item');
+  const cells = (sel) =>
+    page.$$eval(sel, (els) =>
+      els.map((e) => ({
+        name: e.querySelector('.item-name, .r-name').textContent,
+        src: e.querySelector('.item-art img.art-img')?.getAttribute('src') ?? null,
+        emo: e.querySelector('.item-art .emo')?.textContent ?? null,
+      })),
+    );
+  const same = (list) => {
+    for (const c of list) assert.deepEqual([c.src, c.emo], [art(c.name), art(c.name) ? null : byName.get(c.name).emoji], c.name);
+  };
+  // the case contents: a picture for each brainrot, the emoji for the two without one
+  const rows = await cells('#caseItems .item');
+  assert.equal(rows.length, noob.items.length);
+  same(rows);
+  assert.deepEqual(rows.filter((r) => !r.src).map((r) => r.name).sort(), ['Lavaka', 'Wave Rider']);
+  // a 256 × 256 picture: the brainrot on a transparent background
+  const first = rows.find((r) => r.src).src;
+  await page.waitForFunction((src) => {
+    const im = document.querySelector(`#caseItems img.art-img[src="${src}"]`);
+    return im && im.complete && im.naturalWidth > 0;
+  }, first);
+  const px = await page.evaluate((src) => {
+    const im = document.querySelector(`#caseItems img.art-img[src="${src}"]`);
+    const c = document.createElement('canvas');
+    c.width = im.naturalWidth;
+    c.height = im.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    const a = (x, y) => d[(y * c.width + x) * 4 + 3];
+    let solid = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] === 255) solid++;
+    return { size: [c.width, c.height], corners: [a(0, 0), a(c.width - 1, 0), a(0, c.height - 1), a(c.width - 1, c.height - 1)], solid, shown: im.offsetWidth };
+  }, first);
+  assert.deepEqual(px.size, [256, 256]);
+  assert.deepEqual(px.corners, [0, 0, 0, 0]);
+  assert.ok(px.solid > 1000, `solid ${px.solid}`);
+  assert.equal(px.shown, 40, 'the size of the emoji row');
+  // the strip shows the same pictures
+  const tiles = await cells('#track .r-tile');
+  assert.ok(tiles.length > 10);
+  same(tiles);
+  // the dropped brainrot: its picture under the marker and, big, in the result
+  await page.click('[data-act="open"]');
+  await page.waitForSelector('.result', { timeout: 9000 });
+  const won = await page.textContent('.result-name');
+  same(await cells('#track .r-tile.win'));
+  assert.equal(await page.$eval('.result-art', (e) => e.querySelector('img.art-img')?.getAttribute('src') ?? null), art(won));
+  if (art(won)) assert.equal(await page.$eval('.result-art img.art-img', (im) => im.offsetWidth), 132, 'big, as the emoji');
+  await page.click('[data-act="sell-won"]');
+  await page.waitForSelector('.toast.ok');
+  // the admin: the picture in the list and in the editor; it is not an upload, the link field stays empty
+  const tim = byName.get('Tim Cheese');
+  await page.evaluate(() => (location.hash = '#/admin/items'));
+  await page.waitForSelector(`[data-item="${tim.id}"]`);
+  assert.equal(await page.getAttribute(`[data-item="${tim.id}"] img.art-img`, 'src'), art(tim.name));
+  await page.click(`[data-item="${tim.id}"]`);
+  await page.waitForSelector('#itemForm .img-prev img.art-img');
+  assert.equal(await page.getAttribute('#itemForm .img-prev img.art-img', 'src'), art(tim.name));
+  assert.equal(await page.$('#imgDel'), null);
+  assert.equal(await page.inputValue('#itemForm [name="image_url"]'), '');
+  assert.deepEqual(errors, []);
+  await page.context().close();
+  await demo.app.setBalance(ME.id, balance);
 });
 
 test('admin: the player card shows where each brainrot came from', { skip }, async () => {
