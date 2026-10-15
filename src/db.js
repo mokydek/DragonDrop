@@ -164,11 +164,15 @@ export function addShareCaseOnce(db, settings) {
   });
 }
 
+/** A pretty price: rounded up to a multiple of 5, at least 5. */
+const roundUp5 = (x) => Math.max(5, Math.ceil(x / 5 - 1e-9) * 5);
+
 /**
  * Once per database: the seeded brainrots get their market prices from seed-data.json (the median FunPay
- * price of the plain brainrot in rubles, October 2026, at 1.65 ₽ per Telegram Star, 1 Star = 1 coin).
+ * price of the plain brainrot in rubles, October 2026: 1 coin = 1 ₽, rounded up to a multiple of 5).
  * A paid case keeps its return to player: its price changes as much as the average value of what is
- * inside it. A Star buys one coin. After that admins change prices as usual.
+ * inside it, rounded up to a multiple of 5. A Telegram Star buys two coins. After that admins change
+ * prices as usual.
  */
 export async function marketPricesOnce(db, settings) {
   if (settings.get('_market_prices_1')) return false;
@@ -195,12 +199,12 @@ export async function marketPricesOnce(db, settings) {
       const ev0 = Number(b.ev);
       const ev1 = Number(after.get(id)?.ev);
       if (!(ev0 > 0) || !(ev1 > 0)) continue;
-      const price = Math.max(1, Math.round((b.price * ev1) / ev0));
+      const price = roundUp5((b.price * ev1) / ev0);
       if (price !== b.price) cases += (await cl.query('UPDATE bs_cases SET price = $2 WHERE id = $1', [id, price])).rowCount;
     }
     return { items, cases };
   });
-  if (settings.get('stars_rate') !== 1) await settings.update({ stars_rate: 1 });
+  if (settings.get('stars_rate') !== 2) await settings.update({ stars_rate: 2 });
   await settings.setInternal('_market_prices_1', true);
   return changed;
 }
