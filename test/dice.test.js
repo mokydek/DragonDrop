@@ -1,9 +1,9 @@
 // Colour dice: a colour, a stake (coins or brainrots), three fair dice; 1 / 3 dice of the colour pay
-// ×2 / ×4, none loses the stake, and so do two dice of one colour (a pair), whatever the colour.
+// ×2 / ×4, none or 2 of the colour lose the stake; two dice of another colour change nothing.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, scriptedRng } from './helpers.js';
-import { DICE_COLORS, DICE_PAYS, isPair } from '../src/dice.js';
+import { DICE_COLORS, DICE_PAYS } from '../src/dice.js';
 
 const rng = scriptedRng();
 let app;
@@ -34,19 +34,17 @@ const give = async (u, names) => {
   return ids;
 };
 
-test('six colours (orange, no pink), ×2 / ×4 for 1 / 3 dice, a pair loses: the game gives back 124 / 216 on average; the app gets the rules', async () => {
+test('six colours (orange, no pink), ×2 / ×4 for 1 / 3 dice of the colour, 2 of it lose: the game gives back 154 / 216 on average; the app gets the rules', async () => {
   assert.deepEqual(DICE_COLORS, ['red', 'yellow', 'green', 'blue', 'purple', 'orange']);
-  // a pair is exactly two dice of one colour: three of a kind and three different are not
-  assert.deepEqual([['red', 'red', 'blue'], ['blue', 'red', 'blue'], ['red', 'red', 'red'], ['red', 'blue', 'green']].map(isPair), [true, true, false, false]);
-  // every one of the 6³ throws, betting on red: 60 win ×2 (one red, the other two different), 1 wins ×4
+  // every one of the 6³ throws, betting on red: 75 win ×2 (one red, whatever the other two), 1 wins ×4
   let back = 0;
   let wins = 0;
   for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) for (let c = 0; c < 6; c++) {
-    const m = isPair([a, b, c]) ? 0 : DICE_PAYS[[a, b, c].filter((x) => x === 0).length];
+    const m = DICE_PAYS[[a, b, c].filter((x) => x === 0).length];
     back += m;
     if (m) wins++;
   }
-  assert.deepEqual([back, wins], [124, 61]);
+  assert.deepEqual([back, wins], [154, 76]);
   const boot = (await app.post('/api/bootstrap', { user: p })).body;
   assert.deepEqual(boot.dice, { minBet: 5, maxBet: 100000, colors: DICE_COLORS, pays: [0, 2, 0, 4] });
   assert.deepEqual((await app.get('/api/catalog', { user: p })).body.dice, boot.dice);
@@ -56,8 +54,8 @@ test('coins: the stake leaves the balance, a win comes back multiplied; every th
   await app.setBalance(p.id, 1000);
   const cases = [
     { color: 'red', bet: 100, faces: ['red', 'blue', 'orange'], matches: 1, mult: 2 },
-    { color: 'red', bet: 100, faces: ['red', 'purple', 'red'], matches: 2, mult: 0 }, // a pair of red: lost
-    { color: 'red', bet: 100, faces: ['blue', 'red', 'blue'], matches: 1, mult: 0 }, // red came up, but a pair of blue
+    { color: 'red', bet: 100, faces: ['red', 'purple', 'red'], matches: 2, mult: 0 }, // two red: lost
+    { color: 'red', bet: 100, faces: ['blue', 'red', 'blue'], matches: 1, mult: 2 }, // one red: two blue change nothing
     { color: 'green', bet: 200, faces: ['green', 'green', 'green'], matches: 3, mult: 4 },
     { color: 'yellow', bet: '150', faces: ['red', 'green', 'blue'], matches: 0, mult: 0 },
   ];
