@@ -52,7 +52,7 @@ test('home: header, live drops, top drop, all 12 cases, no errors', { skip }, as
   assert.equal(priceTexts[0].trim(), 'FREE', 'the nick case is free');
   assert.equal(priceTexts[1].trim(), 'FREE', 'the share case is free');
   const prices = priceTexts.slice(2).map(num);
-  assert.deepEqual(prices, [10, 25, 65, 200, 250, 350, 450, 750, 2000]);
+  assert.deepEqual(prices, [20, 45, 55, 225, 265, 370, 300, 635, 1920]);
   assert.ok((await page.locator('#feed .drop').count()) >= 10);
   assert.match(await page.textContent('#top24'), /Топ дроп 24ч/);
   assert.equal(await page.textContent('.live-title span'), 'Последние дропы онлайн');
@@ -69,7 +69,7 @@ test('opening a paid case: charge, spin, result, sell', { skip }, async () => {
   assert.equal(await page.locator('.grid.items .item').count(), noob.items.length);
   const before = num(await page.textContent('#bal'));
   await page.click('[data-act="open"]');
-  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b - 10, before);
+  await page.waitForFunction(([b, p]) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b - p, [before, noob.price]);
   await page.waitForSelector('.result', { timeout: 9000 });
   const name = await page.textContent('.result-name');
   const value = num(await page.textContent('.result-val'));
@@ -80,29 +80,29 @@ test('opening a paid case: charge, spin, result, sell', { skip }, async () => {
   assert.equal(await page.textContent('#track .r-tile.win .r-name'), name);
   await page.click('[data-act="sell-won"]');
   await page.waitForSelector('.toast.ok');
-  assert.equal(num(await page.textContent('#bal')), before - 10 + value);
-  assert.equal((await apiMe()).me.balance, before - 10 + value);
+  assert.equal(num(await page.textContent('#bal')), before - noob.price + value);
+  assert.equal((await apiMe()).me.balance, before - noob.price + value);
   assert.deepEqual(errors, []);
   await page.context().close();
 });
 
 test('opening a case x3: three strips, one charge of 3 × price, all drops shown', { skip }, async () => {
-  await demo.app.setBalance(ME.id, 250); // enough for one x3 only
+  await demo.app.setBalance(ME.id, 210); // enough for one x3 only
   const { page, errors } = await open();
   await page.waitForSelector('.case-grid');
-  const fish = demo.bySlug.fish; // 65
+  const fish = demo.bySlug.fish; // 55
   await page.click(`[data-case="${fish.id}"]`);
   await page.waitForSelector('#countSeg');
   assert.deepEqual(await page.locator('#countSeg button').allTextContents(), ['x1', 'x2', 'x3', 'x5']);
-  assert.equal(await page.isDisabled('[data-act="count"][data-n="5"]'), true, '5 × 65 > 250');
+  assert.equal(await page.isDisabled('[data-act="count"][data-n="5"]'), true, '5 × 55 > 210');
   assert.equal(await page.locator('#roulettes .roulette').count(), 1);
   const before = num(await page.textContent('#bal'));
   await page.click('[data-act="count"][data-n="3"]');
   assert.equal(await page.locator('#roulettes .roulette').count(), 3);
-  assert.equal(num(await page.textContent('[data-act="open"]')), 195);
+  assert.equal(num(await page.textContent('[data-act="open"]')), 165);
   const invBefore = (await demo.app.get('/api/inventory', { user: ME })).body.inventory.length;
   await page.click('[data-act="open"]');
-  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b - 195, before);
+  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b - 165, before);
   await page.waitForSelector('.result.multi', { timeout: 10000 });
   await page.waitForTimeout(300);
   // the strips keep showing the drops even though x3 is no longer affordable
@@ -120,7 +120,7 @@ test('opening a case x3: three strips, one charge of 3 × price, all drops shown
   assert.equal(num(await page.textContent('.result.multi [data-act="sell-won"]')), total);
   await page.click('.result.multi [data-act="sell-won"]');
   await page.waitForSelector('.toast.ok');
-  assert.equal(num(await page.textContent('#bal')), before - 195 + total);
+  assert.equal(num(await page.textContent('#bal')), before - 165 + total);
   assert.equal((await demo.app.get('/api/inventory', { user: ME })).body.inventory.length, invBefore);
   // not enough for x3 any more -> that option is disabled and fewer strips are shown
   await demo.app.setBalance(ME.id, 140);
@@ -141,17 +141,17 @@ test('opening a case x3: three strips, one charge of 3 × price, all drops shown
 });
 
 test('opening a case x5: five strips, 5 × price, five drops', { skip }, async () => {
-  const fish = demo.bySlug.fish; // 65
-  await demo.app.setBalance(ME.id, 300); // x5 = 325 is too much, x3 = 195 is fine
+  const fish = demo.bySlug.fish; // 55
+  await demo.app.setBalance(ME.id, 250); // x5 = 275 is too much, x3 = 165 is fine
   const { page, errors } = await open({ path: `/#/case/${fish.id}` });
   await page.waitForSelector('#countSeg');
   assert.equal(await page.isDisabled('[data-act="count"][data-n="5"]'), true);
-  await demo.app.setBalance(ME.id, 400);
+  await demo.app.setBalance(ME.id, 335);
   await page.reload();
   await page.waitForSelector('#countSeg');
   await page.click('[data-act="count"][data-n="5"]');
   assert.equal(await page.locator('#roulettes .roulette').count(), 5);
-  assert.equal(num(await page.textContent('[data-act="open"]')), 325);
+  assert.equal(num(await page.textContent('[data-act="open"]')), 275);
   // all five strips fit on a phone screen together with the Open button
   const fits = await page.evaluate(() => {
     const r = [...document.querySelectorAll('#roulettes .roulette')].map((e) => e.getBoundingClientRect());
@@ -161,7 +161,7 @@ test('opening a case x5: five strips, 5 × price, five drops', { skip }, async (
   assert.ok(fits, 'strips + button fit in one screen');
   const invBefore = (await demo.app.get('/api/inventory', { user: ME })).body.inventory.length;
   await page.click('[data-act="open"]');
-  await page.waitForFunction(() => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === 75);
+  await page.waitForFunction(() => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === 60);
   await page.waitForSelector('.result.multi', { timeout: 10000 });
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#roulettes .r-tile.win').count(), 5);
@@ -174,10 +174,10 @@ test('opening a case x5: five strips, 5 × price, five drops', { skip }, async (
   assert.deepEqual([...wins].sort(), [...names].sort(), 'every strip stopped on its own drop');
   await page.click('.result.multi [data-act="close-modal"]');
   await page.waitForTimeout(300);
-  // 75 left: x5 / x3 / x2 are out of reach, the case falls back to x1
+  // 60 left: x5 / x3 / x2 are out of reach, the case falls back to x1
   assert.equal(await page.locator('#countSeg button.on').textContent(), 'x1');
   for (const n of [2, 3, 5]) assert.equal(await page.isDisabled(`[data-act="count"][data-n="${n}"]`), true, `x${n} disabled`);
-  assert.equal(num(await page.textContent('[data-act="open"]')), 65);
+  assert.equal(num(await page.textContent('[data-act="open"]')), 55);
   await demo.app.setBalance(ME.id, 1250);
   assert.deepEqual(errors, []);
   await page.context().close();
@@ -185,7 +185,7 @@ test('opening a case x5: five strips, 5 × price, five drops', { skip }, async (
 
 test('selling the drop re-enables opening when the balance is enough again', { skip }, async () => {
   const noob = demo.bySlug.noob;
-  await demo.app.setBalance(ME.id, 10);
+  await demo.app.setBalance(ME.id, noob.price);
   const { page } = await open({ path: `/#/case/${noob.id}` });
   await page.waitForSelector('[data-act="open"]');
   await page.click('[data-act="open"]');
@@ -199,7 +199,7 @@ test('selling the drop re-enables opening when the balance is enough again', { s
   await page.waitForSelector('.toast.ok');
   const bal = num(await page.textContent('#bal'));
   const btn = page.locator('#openRow .btn');
-  assert.equal(await btn.isDisabled(), bal < 10, `balance ${bal}`);
+  assert.equal(await btn.isDisabled(), bal < noob.price, `balance ${bal}`);
   await demo.app.setBalance(ME.id, 1250);
   await page.context().close();
 });
@@ -214,11 +214,13 @@ test('theme saved on the server is used on a new device', { skip }, async () => 
 });
 
 test('not enough coins disables the button', { skip }, async () => {
+  await demo.app.setBalance(ME.id, demo.bySlug.griffin.price - 1);
   const { page } = await open({ path: `/#/case/${demo.bySlug.griffin.id}` });
   await page.waitForSelector('#openRow .btn');
   assert.equal(await page.isDisabled('#openRow .btn'), true);
   assert.equal(await page.textContent('#openRow .btn'), 'Недостаточно монет');
   await page.context().close();
+  await demo.app.setBalance(ME.id, 1250);
 });
 
 test('free case: share via Telegram, open, then cooldown', { skip }, async () => {
@@ -483,31 +485,31 @@ test('upgrader: the chance on screen is the one the server rolls; a changed chan
     const it = [...demo.ctx.game.catalog.items.values()].find((i) => i.name === name);
     return (await demo.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [ME.id, it.id])).id;
   };
-  const inv = await give('Chimpanzini Bananini'); // 30
-  const spooky = [...demo.ctx.game.catalog.items.values()].find((i) => i.name === 'Spooky and Pumpky'); // 200
+  const inv = await give('Ketupat Kepat'); // 50
+  const spooky = [...demo.ctx.game.catalog.items.values()].find((i) => i.name === 'Spooky and Pumpky'); // 435
   const { page, errors } = await open({ path: '/#/upgrade' });
   await page.waitForSelector(`[data-act="up-pick"][data-inv="${inv}"]`);
   await page.click(`[data-act="up-pick"][data-inv="${inv}"]`);
   await page.click('[data-act="up-tab"][data-v="targets"]');
   await page.click(`[data-act="up-target"][data-id="${spooky.id}"]`);
   const gauge = async () => Number((await page.textContent('#gPct')).replace('%', '').replace(',', '.').replace(/\s/g, ''));
-  // 30 / 200 * 90 = 13.5%, 1.06 times lower = 12.73%
-  assert.equal(await gauge(), 12.73);
+  // 50 / 435 * 90 = 10.34%, 1.06 times lower = 9.75% (cut to two decimals)
+  assert.equal(await gauge(), 9.75);
   // the main admin changes the bad luck while the player looks at the old chance
   await demo.ctx.settings.update({ upgrade_luck: 2 });
   const upsBefore = (await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_upgrades WHERE user_id = $1', [ME.id])).n;
   await page.click('#upBtn');
   await page.waitForSelector('.toast.error');
   assert.equal(await page.textContent('.toast.error'), 'Шанс изменился — проверь и попробуй ещё раз');
-  await page.waitForFunction(() => document.querySelector('#gPct').textContent.replace(/\s/g, '') === '6,75%');
+  await page.waitForFunction(() => document.querySelector('#gPct').textContent.replace(/\s/g, '') === '5,17%');
   assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_upgrades WHERE user_id = $1', [ME.id])).n, upsBefore, 'nothing rolled');
   assert.ok(await page.$(`[data-act="up-target"][data-id="${spooky.id}"].sel`), 'the target is still picked');
-  assert.equal(num(await page.textContent('#upSlots .slot:first-child .slot-val')), 30, 'and the bet too');
+  assert.equal(num(await page.textContent('#upSlots .slot:first-child .slot-val')), 50, 'and the bet too');
   // the next try uses the new chance; the server rolls with exactly what was shown
   await page.click('#upBtn');
   await page.waitForSelector('.result', { timeout: 9000 });
   const last = await demo.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [ME.id]);
-  assert.equal(Number(last.chance), 6.75);
+  assert.equal(Number(last.chance), 5.17);
   await page.click('.result [data-act="close-modal"]');
   await demo.ctx.settings.update({ upgrade_luck: 1.06 });
   assert.deepEqual(errors.filter((e) => !/status of 409/.test(e)), []);
@@ -647,7 +649,7 @@ test('fast spin: a switch under Open and Upgrade; the case strip and the upgrade
 test('rocket on brainrots: stake a brainrot, a cash-out pays a brainrot + coins', { skip }, async () => {
   const at = (x, edge = 20) => (max) => Math.floor((1 - (100 - edge) / (100 * x + 0.5)) * max);
   const items = [...demo.ctx.game.catalog.items.values()];
-  const spooky = items.find((i) => i.name === 'Spooky and Pumpky'); // 200
+  const spooky = items.find((i) => i.name === 'Spooky and Pumpky'); // 262
   const inv = (await demo.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [ME.id, spooky.id])).id;
   const { page, errors } = await open({ path: '/#/crash' });
   await page.waitForSelector('#crSeg');
@@ -655,7 +657,7 @@ test('rocket on brainrots: stake a brainrot, a cash-out pays a brainrot + coins'
   await page.waitForSelector('#crGrid');
   assert.equal(await page.isDisabled('#crBtn'), true, 'nothing staked yet');
   await page.click(`[data-act="cr-pick"][data-inv="${inv}"]`);
-  assert.equal(num(await page.textContent('#crBetVal')), 200);
+  assert.equal(num(await page.textContent('#crBetVal')), spooky.value);
   assert.equal(await page.isDisabled('#crBtn'), false);
   demo.app.tg.reset();
   uiRng.queue.push(at(100));
@@ -868,11 +870,11 @@ test('top-up with Telegram Stars: invoice opens, payment is credited', { skip },
   await page.click('[data-act="topup"]');
   await page.click('[data-act="tu-stars"]');
   await page.waitForSelector('#starsForm');
-  assert.equal(num(await page.textContent('#starsGet')), 100, 'default 100 stars at rate 1');
+  assert.equal(num(await page.textContent('#starsGet')), 200, 'default 100 stars at rate 2');
   await page.fill('#starsInput', '0');
   assert.equal(await page.isDisabled('#starsPay'), true);
   await page.fill('#starsInput', '40');
-  assert.equal(num(await page.textContent('#starsGet')), 40);
+  assert.equal(num(await page.textContent('#starsGet')), 80);
   assert.equal(num(await page.textContent('#starsPay')), 40);
   demo.app.tg.reset();
   await page.click('#starsPay');
@@ -880,7 +882,7 @@ test('top-up with Telegram Stars: invoice opens, payment is credited', { skip },
   const link = await page.evaluate(() => window.__tgCalls.find((c) => c[0] === 'openInvoice')[1]);
   assert.match(link, /^https:\/\/t\.me\/\$inv_/);
   const inv = demo.app.tg.calls('createInvoiceLink')[0].payload;
-  assert.deepEqual(inv.prices, [{ label: '40 монет', amount: 40 }]);
+  assert.deepEqual(inv.prices, [{ label: '80 монет', amount: 40 }]);
   // Telegram: pre-checkout, then the payment message, then the Mini App callback
   await demo.app.sendUpdate({ pre_checkout_query: { id: 'pq1', from: { is_bot: false, ...ME }, currency: 'XTR', total_amount: 40, invoice_payload: inv.payload } });
   assert.equal(demo.app.tg.calls('answerPreCheckoutQuery')[0].payload.ok, true);
@@ -892,8 +894,8 @@ test('top-up with Telegram Stars: invoice opens, payment is credited', { skip },
   });
   await page.evaluate(() => window.__invoiceCb('paid'));
   await page.waitForSelector('.toast.ok');
-  assert.match(await page.textContent('.toast.ok'), /Баланс пополнен: \+40/);
-  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 40, before);
+  assert.match(await page.textContent('.toast.ok'), /Баланс пополнен: \+80/);
+  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 80, before);
   await page.waitForSelector('.modal-wrap', { state: 'detached' }); // sheet closed
   assert.deepEqual(errors, []);
   await page.context().close();
@@ -1021,9 +1023,10 @@ test('auto promo code: a card on the cases screen — code, bonus, time left; «
   await payInvoice(p, inv.payload, 200, 'ui-ap-1');
   await page.evaluate(() => window.__invoiceCb('paid'));
   await page.waitForSelector('.toast.ok');
-  const bonus = Math.floor((200 * cur.pct) / 100);
-  assert.match(await page.textContent('.toast.ok'), new RegExp(`\\+${200 + bonus}$`));
-  await page.waitForFunction((n) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === n, 200 + bonus);
+  const coins = 200 * 2; // 1 ⭐ = 2 coins
+  const bonus = Math.floor((coins * cur.pct) / 100);
+  assert.match(await page.textContent('.toast.ok'), new RegExp(`\\+${coins + bonus}$`));
+  await page.waitForFunction((n) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === n, coins + bonus);
   assert.equal((await demo.ctx.db.one('SELECT ref_code FROM bs_users WHERE id = $1', [p.id])).ref_code, null, 'not tied to a referral code');
   // used: «Пополнить» no longer types it in, by hand it is refused
   await page.waitForSelector('.modal-wrap', { state: 'detached' });
@@ -1384,7 +1387,7 @@ test('website mode: Stars invoice opens as a Telegram link and the balance updat
       successful_payment: { currency: 'XTR', total_amount: 15, invoice_payload: inv.payload, telegram_payment_charge_id: 'ui-charge-web', provider_payment_charge_id: '' },
     },
   });
-  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 15, before, { timeout: 8000 });
+  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 30, before, { timeout: 8000 });
   await page.waitForSelector('.toast.ok');
   assert.deepEqual(errors, []);
   await context.close();
@@ -1502,8 +1505,8 @@ test('withdrawal from the profile: listed brainrots go as they are, others are e
     return (await demo.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [ME.id, it.id])).id;
   };
   const garama = await give('Garama and Madundung');
-  const croc = await give('Bombardiro Crocodilo'); // 75, can't be withdrawn
-  const goose = await give('Bombombini Gusini'); // 85, can't be withdrawn
+  const pot = await give('Pot Hotspot'); // 40, can't be withdrawn
+  const chillis = await give('Los Chillis'); // 285, can't be withdrawn
   const cerberus = await give('Cerberus');
   const { page, errors } = await open({ path: '/#/profile' });
   await page.waitForSelector('.p-card');
@@ -1516,7 +1519,7 @@ test('withdrawal from the profile: listed brainrots go as they are, others are e
   assert.equal(await page.isDisabled('#wdBtn'), true);
   assert.equal(await page.locator('[data-wd]').count(), before);
   await page.click(`[data-wd="${cerberus}"]`);
-  assert.equal(num(await page.textContent('#wdBtn')), 150);
+  assert.equal(num(await page.textContent('#wdBtn')), 300);
   await page.fill('#wdForm [name=nick]', 'TestRoblox');
   await page.click('#wdBtn');
   await page.waitForSelector('.toast.ok');
@@ -1530,16 +1533,16 @@ test('withdrawal from the profile: listed brainrots go as they are, others are e
   await page.click('[data-act="withdraw"]');
   await page.waitForSelector('#wdForm');
   assert.equal(await page.inputValue('#wdForm [name=nick]'), 'TestRoblox', 'nickname remembered');
-  for (const id of [garama, croc, goose]) await page.click(`[data-wd="${id}"]`);
+  for (const id of [garama, pot, chillis]) await page.click(`[data-wd="${id}"]`);
   await page.click('#wdBtn');
   await page.waitForSelector('#wdSwap:not(.hidden) [data-wt]');
   assert.equal(await page.textContent('#wdSwap .sheet-title'), 'Выбери, кого вывести');
   const names = await page.locator('#wdTargets .item-name').allTextContents();
   assert.deepEqual([...names].sort(), ['Burguro and Fryuro', 'Capitano Moby', 'Cerberus', 'Dragon Cannelloni', 'Garama and Madundung']);
   const id = (n) => [...demo.ctx.game.catalog.items.values()].find((i) => i.name === n).id;
-  assert.equal(await page.isDisabled(`[data-wt="${id('Dragon Cannelloni')}"]`), true, '1100 > 160');
-  assert.equal(await page.textContent(`[data-wt="${id('Cerberus')}"] .wd-rest`), 'Остаток +10');
-  assert.equal(await page.textContent(`[data-wt="${id('Burguro and Fryuro')}"] .wd-rest`), 'Остаток +60');
+  assert.equal(await page.isDisabled(`[data-wt="${id('Dragon Cannelloni')}"]`), true, '1200 > 325');
+  assert.equal(await page.textContent(`[data-wt="${id('Cerberus')}"] .wd-rest`), 'Остаток +25');
+  assert.equal(await page.textContent(`[data-wt="${id('Burguro and Fryuro')}"] .wd-rest`), 'Остаток +175');
   assert.equal(await page.isDisabled('#wdGo'), true);
   // back to the list keeps the selection
   await page.click('#wdBack');
@@ -1548,10 +1551,10 @@ test('withdrawal from the profile: listed brainrots go as they are, others are e
   await page.click(`[data-wt="${id('Cerberus')}"]`);
   await page.click('#wdGo');
   await page.waitForSelector('.toast.ok');
-  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 10, bal);
+  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 25, bal);
   row = await demo.ctx.db.one("SELECT * FROM bs_requests WHERE user_id = $1 AND kind = 'withdraw' ORDER BY id DESC LIMIT 1", [ME.id]);
   assert.deepEqual(row.items.map((i) => i.name), ['Cerberus', 'Garama and Madundung']);
-  assert.equal(row.exchange.rest, 10);
+  assert.equal(row.exchange.rest, 25);
   await page.waitForFunction((n) => document.querySelectorAll('.grid.items .item').length === n, before - 4);
   assert.equal((await demo.app.get('/api/inventory', { user: ME })).body.inventory.length, before - 4);
   await demo.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE user_id = $1 AND kind = 'withdraw' AND status = 'new'", [ME.id]);
@@ -1762,20 +1765,20 @@ test('live feed updates when someone else opens a case', { skip }, async () => {
 test('admin: edit a case price from the panel and players see it', { skip }, async () => {
   const { page, errors } = await open({ path: `/#/admin/cases/${demo.bySlug.pro.id}` });
   await page.waitForSelector('#caseForm');
-  await page.fill('#cPrice', '30');
+  await page.fill('#cPrice', '50');
   const rtp = await page.textContent('#lootSum');
-  assert.match(rtp, /75%/, 'return recalculated live (22.5 / 30)');
+  assert.match(rtp, /75,49%/, 'return recalculated live (37.74 / 50)');
   await page.click('#caseForm button[type=submit]');
   await page.waitForSelector('.toast.ok');
   const pub = (await demo.app.get('/api/catalog', { user: demo.others[0] })).body.cases.find((c) => c.slug === 'pro');
-  assert.equal(pub.price, 30);
+  assert.equal(pub.price, 50);
   await page.evaluate(() => (location.hash = '#/cases'));
   await page.waitForSelector('.case-grid');
-  assert.equal(num(await page.textContent('.case-price >> nth=3')), 30); // after the nick case, the share case and the Noob case
+  assert.equal(num(await page.textContent('.case-price >> nth=3')), 50); // after the nick case, the share case and the Noob case
   // restore
   await page.evaluate((id) => (location.hash = '#/admin/cases/' + id), demo.bySlug.pro.id);
   await page.waitForSelector('#caseForm');
-  await page.fill('#cPrice', '25');
+  await page.fill('#cPrice', '45');
   await page.click('#caseForm button[type=submit]');
   await page.waitForSelector('.toast.ok');
   // every admin section renders
@@ -1853,7 +1856,7 @@ test('admin: case picture upload shows on the case card, removal brings the ches
   assert.equal(await page.inputValue('#cPrice'), '66', 'form edits kept');
   const adm = (await demo.app.get('/api/admin/cases', { user: ME })).body.cases.find((c) => c.id === id);
   assert.match(adm.image, /^\/api\/img\/case\//);
-  assert.equal(adm.price, 65, 'price not saved by the upload');
+  assert.equal(adm.price, demo.bySlug.fish.price, 'price not saved by the upload');
   // stored picture is downscaled to 512px
   const size = await page.evaluate(async (src) => {
     const im = new Image();
@@ -2229,9 +2232,9 @@ test('main admin: bad luck for one account from the player card; that player see
     assert.deepEqual(errors, []);
     await page.context().close();
   }
-  // the player: 30 / 200 * 90 = 13.5%, 1.06 × 2 = 2.12 times lower = 6.36% (other players: 12.73%)
+  // the player: 50 / 435 * 90 = 10.34%, 1.06 × 2 = 2.12 times lower = 4.87% (other players: 9.75%)
   const items = [...demo.ctx.game.catalog.items.values()];
-  const chimp = items.find((i) => i.name === 'Chimpanzini Bananini');
+  const chimp = items.find((i) => i.name === 'Ketupat Kepat');
   const spooky = items.find((i) => i.name === 'Spooky and Pumpky');
   const inv = (await demo.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [p.id, chimp.id])).id;
   {
@@ -2240,11 +2243,11 @@ test('main admin: bad luck for one account from the player card; that player see
     await page.click(`[data-act="up-pick"][data-inv="${inv}"]`);
     await page.click('[data-act="up-tab"][data-v="targets"]');
     await page.click(`[data-act="up-target"][data-id="${spooky.id}"]`);
-    assert.equal(Number((await page.textContent('#gPct')).replace('%', '').replace(',', '.').replace(/\s/g, '')), 6.36);
+    assert.equal(Number((await page.textContent('#gPct')).replace('%', '').replace(',', '.').replace(/\s/g, '')), 4.87);
     await page.click('#upBtn');
     await page.waitForSelector('.result', { timeout: 9000 });
     const last = await demo.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [p.id]);
-    assert.equal(Number(last.chance), 6.36, 'rolled with the chance on the screen');
+    assert.equal(Number(last.chance), 4.87, 'rolled with the chance on the screen');
     assert.deepEqual(errors, []);
     await page.context().close();
   }
@@ -3164,9 +3167,10 @@ test('colour dice: a tab of its own; pick a colour, stake coins; the dice land o
 
 test('colour dice on brainrots: the staked ones leave the inventory; a win gives the best brainrot it covers and the rest in coins; too cheap a stake is refused', { skip }, async () => {
   await demo.app.setBalance(ME.id, 0);
+  await demo.ctx.settings.update({ dice_min_bet: 10 }); // the cheapest brainrots cost 5: one of them is too small a stake here
   const items = [...demo.ctx.game.catalog.items.values()];
-  const spooky = items.find((i) => i.name === 'Spooky and Pumpky'); // 200
-  const cheap = items.find((i) => i.enabled && i.value < 5);
+  const spooky = items.find((i) => i.name === 'Spooky and Pumpky'); // 435
+  const cheap = items.find((i) => i.enabled && i.value < 10);
   const add = async (it) => Number((await demo.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [ME.id, it.id])).id);
   const inv = await add(spooky);
   const small = await add(cheap);
@@ -3180,18 +3184,18 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   assert.equal(num(await page.textContent('#dcBetVal')), cheap.value);
   await page.click('#dcBtn');
   await page.waitForSelector('.toast.error');
-  assert.equal((await page.textContent('.toast.error')).replace(/\s/g, ' '), 'Ставка от 5 до 100 000 монет');
+  assert.equal((await page.textContent('.toast.error')).replace(/\s/g, ' '), 'Ставка от 10 до 100 000 монет');
   assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [small])).n, 1);
   await page.click(`[data-act="dc-pick"][data-inv="${small}"]`);
-  // Spooky and Pumpky (200) on purple: purple · yellow · orange — ×2 = 400
+  // Spooky and Pumpky (435) on purple: purple · yellow · orange — ×2 = 870
   await page.click(`[data-act="dc-pick"][data-inv="${inv}"]`);
-  assert.equal(num(await page.textContent('#dcBetVal')), 200);
+  assert.equal(num(await page.textContent('#dcBetVal')), spooky.value);
   assert.equal(await page.isDisabled('#dcBtn'), false);
   await page.click('[data-act="dc-color"][data-c="purple"]');
   diceFaces('purple', 'yellow', 'orange');
   await page.click('#dcBtn');
   await page.waitForSelector('#dcNote .dn-won');
-  const win = 400;
+  const win = 2 * spooky.value;
   const best = items.filter((i) => i.enabled && i.value <= win).sort((a, b) => b.value - a.value)[0];
   assert.deepEqual(await diceShown(page), [[DC_HEX.purple, 'hit'], [DC_HEX.yellow, 'miss'], [DC_HEX.orange, 'miss']]);
   assert.equal(await page.textContent('#dcNote .dn-won'), 'Совпало 1 — ×2');
@@ -3212,7 +3216,7 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   // the result stays on the dice after the grid is redrawn
   assert.equal(await page.textContent('#dcNote .cr-win-item b'), best.name);
   const r = await demo.ctx.db.one('SELECT bet, bet_kind, win, bet_items, win_item FROM bs_dice WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [ME.id]);
-  assert.deepEqual([Number(r.bet), r.bet_kind, Number(r.win), r.bet_items.map((x) => x.name), r.win_item.itemId], [200, 'brainrots', 400, ['Spooky and Pumpky'], best.id]);
+  assert.deepEqual([Number(r.bet), r.bet_kind, Number(r.win), r.bet_items.map((x) => x.name), r.win_item.itemId], [spooky.value, 'brainrots', win, ['Spooky and Pumpky'], best.id]);
   // a miss: the staked brainrot is lost
   await page.click(`[data-act="dc-pick"][data-inv="${won.id}"]`);
   await page.click('[data-act="dc-color"][data-c="yellow"]');
@@ -3222,6 +3226,7 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   assert.equal((await demo.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [won.id])).n, 0);
   await page.waitForFunction((id) => !document.querySelector(`#dcGrid [data-inv="${id}"]`), won.id);
   assert.equal(num(await page.textContent('#bal')), rest);
+  await demo.ctx.settings.update({ dice_min_bet: 5 });
   assert.deepEqual(errors, []);
   await page.context().close();
 });
@@ -3233,7 +3238,7 @@ test('small phones (360px): no horizontal scrolling anywhere', { skip }, async (
   await demo.ctx.live.refreshTop();
   const { page } = await open({ width: 360, height: 740 });
   await page.waitForSelector('.case-grid');
-  assert.match(await page.textContent('.top24-val'), /50\s000/);
+  assert.match(await page.textContent('.top24-val'), /51\s760/);
   const fits = await page.evaluate(() => {
     const card = document.querySelector('.top24').getBoundingClientRect();
     const val = document.querySelector('.top24-val').getBoundingClientRect();
@@ -3380,7 +3385,7 @@ test('controls: the main admin closes parts for every player and opens them agai
   assert.equal(await pl.page.textContent('.toast.error'), 'Кейсы временно закрыты');
   await pl.page.waitForFunction(() => document.querySelector('#openRow .btn')?.textContent === 'Временно закрыто');
   assert.equal(await pl.page.isDisabled('#openRow .btn'), true);
-  assert.equal(num(await pl.page.textContent('#bal')), 990);
+  assert.equal(num(await pl.page.textContent('#bal')), 1000 - demo.bySlug.noob.price);
   await pl.page.screenshot({ path: '/tmp/claude-0/-home-claude/cc3b924b-8798-56ab-9683-fedc79375953/scratchpad/gate-case.png' });
   await pl.page.context().close();
 

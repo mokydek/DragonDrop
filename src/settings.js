@@ -39,7 +39,7 @@ export const SETTINGS_SCHEMA = {
   dice_min_bet: { type: 'number', min: 1, max: 1_000_000_000, def: 5, int: true }, // colour dice: the smallest stake
   dice_max_bet: { type: 'number', min: 1, max: 1_000_000_000, def: 100_000, int: true }, // colour dice: the biggest stake
   start_balance: { type: 'number', min: 0, max: 1_000_000, def: 0, int: true },
-  stars_rate: { type: 'number', min: 0.01, max: 1_000_000, def: 1 }, // coins for 1 Telegram Star
+  stars_rate: { type: 'number', min: 0.01, max: 1_000_000, def: 2 }, // coins for 1 Telegram Star
   welcome_ru: { type: 'string', max: 1000, def: '' },
   welcome_uk: { type: 'string', max: 1000, def: '' },
   welcome_en: { type: 'string', max: 1000, def: '' },

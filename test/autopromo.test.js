@@ -124,14 +124,14 @@ test('Stars: the code typed in gives +pct % once per player (also with two invoi
   // paid an hour later (another code by then): the bonus of the code typed in
   clock.t += HOUR;
   await pay(p1, payload, 200, 'ap-charge-1');
-  assert.equal(await bal(p1), b0 + 220);
-  assert.deepEqual((await app.get(`/api/topup/stars/${r.body.invoice}`, { user: p1 })).body, { paid: true, coins: 220, balance: b0 + 220 });
+  assert.equal(await bal(p1), b0 + 440, '200 ⭐ = 400 coins, +10 %');
+  assert.deepEqual((await app.get(`/api/topup/stars/${r.body.invoice}`, { user: p1 })).body, { paid: true, coins: 440, balance: b0 + 440 });
   const reply = app.tg.calls('sendMessage').filter((x) => Number(x.payload.chat_id) === p1.id).at(-1).payload.text;
-  assert.match(reply, /\+220 🪙/);
+  assert.match(reply, /\+440 🪙/);
   const req = await app.ctx.db.one("SELECT id, coins, bonus, promo_code, promo_pct, promo_bonus FROM bs_requests WHERE charge_id = 'ap-charge-1'");
-  assert.deepEqual([Number(req.coins), Number(req.bonus), req.promo_code, req.promo_pct, Number(req.promo_bonus)], [200, 0, c.code, 10, 20]);
+  assert.deepEqual([Number(req.coins), Number(req.bonus), req.promo_code, req.promo_pct, Number(req.promo_bonus)], [400, 0, c.code, 10, 40]);
   const log = await app.ctx.db.many('SELECT delta, reason FROM bs_balance_log WHERE user_id = $1 ORDER BY id', [p1.id]);
-  assert.deepEqual(log.slice(-2).map((l) => [Number(l.delta), l.reason]), [[200, `stars:#${req.id}`], [20, `autopromo:#${req.id}`]]);
+  assert.deepEqual(log.slice(-2).map((l) => [Number(l.delta), l.reason]), [[400, `stars:#${req.id}`], [40, `autopromo:#${req.id}`]]);
   assert.equal((await app.ctx.db.one('SELECT ref_code FROM bs_users WHERE id = $1', [p1.id])).ref_code, null);
 
   // the next code: the player can use it again; the old one now says «expired»
@@ -150,7 +150,7 @@ test('Stars: the code typed in gives +pct % once per player (also with two invoi
   const b1 = await bal(p1);
   await pay(p1, i1.payload, 100, 'ap-charge-2');
   await pay(p1, i2.payload, 100, 'ap-charge-3');
-  assert.equal(await bal(p1), b1 + 105 + 100);
+  assert.equal(await bal(p1), b1 + 210 + 200);
   assert.equal((await state(p1)).used, true);
   assert.equal((await invoice(p1, 100, c2.code)).r.body.error, 'promo_used');
 
@@ -163,9 +163,9 @@ test('Stars: the code typed in gives +pct % once per player (also with two invoi
   const both = await invoice(p2, 300, c2.code);
   assert.deepEqual([both.r.body.ref, both.r.body.promo], ['APREF', { code: c2.code, pct: 5 }]);
   await pay(p2, both.payload, 300, 'ap-charge-4');
-  assert.equal(await bal(p2), b2 + 300 + 30 + 15);
+  assert.equal(await bal(p2), b2 + 600 + 60 + 30);
   const stats = (await app.get('/api/admin/referrals/APREF', { user: boss })).body.code.stats;
-  assert.equal(stats.bonus, 30, 'the auto promo bonus is not the code\'s');
+  assert.equal(stats.bonus, 60, 'the auto promo bonus is not the code\'s');
   // a tied player: another referral code changes nothing, an unknown one is a mistake
   assert.equal((await invoice(p2, 10, AUTO_WORDS[2])).r.body.ref, 'APREF');
   assert.equal((await invoice(p2, 10, 'TYPO')).r.body.error, 'bad_ref');

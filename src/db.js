@@ -164,6 +164,51 @@ export function addShareCaseOnce(db, settings) {
   });
 }
 
+/** A pretty price: rounded up to a multiple of 5, at least 5. */
+const roundUp5 = (x) => Math.max(5, Math.ceil(x / 5 - 1e-9) * 5);
+
+/**
+ * Once per database: the seeded brainrots get their market prices from seed-data.json (the median FunPay
+ * price of the plain brainrot in rubles, October 2026: 1 coin = 1 ₽, rounded up to a multiple of 5).
+ * A paid case keeps its return to player: its price changes as much as the average value of what is
+ * inside it, rounded up to a multiple of 5. A Telegram Star buys two coins. After that admins change
+ * prices as usual.
+ */
+export async function marketPricesOnce(db, settings) {
+  if (settings.get('_market_prices_1')) return false;
+  const data = JSON.parse(readFileSync(path.join(here, 'seed-data.json'), 'utf8'));
+  const changed = await db.tx(async (cl) => {
+    const caseValues = async () =>
+      new Map(
+        (
+          await cl.query(
+            `SELECT c.id, c.price, sum(ci.chance * i.value) / nullif(sum(ci.chance), 0) AS ev
+               FROM bs_cases c JOIN bs_case_items ci ON ci.case_id = c.id JOIN bs_items i ON i.id = ci.item_id
+              WHERE c.price > 0 GROUP BY c.id`,
+          )
+        ).rows.map((r) => [r.id, r]),
+      );
+    const before = await caseValues();
+    let items = 0;
+    for (const it of data.items) {
+      items += (await cl.query('UPDATE bs_items SET value = $2 WHERE name = $1 AND value <> $2', [it.name, it.value])).rowCount;
+    }
+    const after = await caseValues();
+    let cases = 0;
+    for (const [id, b] of before) {
+      const ev0 = Number(b.ev);
+      const ev1 = Number(after.get(id)?.ev);
+      if (!(ev0 > 0) || !(ev1 > 0)) continue;
+      const price = roundUp5((b.price * ev1) / ev0);
+      if (price !== b.price) cases += (await cl.query('UPDATE bs_cases SET price = $2 WHERE id = $1', [id, price])).rowCount;
+    }
+    return { items, cases };
+  });
+  if (settings.get('stars_rate') !== 2) await settings.update({ stars_rate: 2 });
+  await settings.setInternal('_market_prices_1', true);
+  return changed;
+}
+
 async function seed(client) {
   const { rows } = await client.query('SELECT count(*)::int AS n FROM bs_cases');
   if (rows[0].n > 0) return;

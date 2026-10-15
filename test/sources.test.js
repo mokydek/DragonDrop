@@ -29,7 +29,7 @@ const byInv = (inv, id) => inv.find((i) => i.invId === id);
 
 test('player card: case, free case, upgrader, admin gift, deposit and returned withdrawal', async () => {
   // case
-  await app.setBalance(player.id, 30);
+  await app.setBalance(player.id, 40);
   const noob = caseBySlug('noob');
   const opened = await app.post(`/api/case/${noob.id}/open`, { user: player, body: { count: 2 } });
   assert.equal(opened.status, 200, JSON.stringify(opened.body));
@@ -40,13 +40,13 @@ test('player card: case, free case, upgrader, admin gift, deposit and returned w
   assert.equal(free.status, 200, JSON.stringify(free.body));
   await app.ctx.settings.update({ free_require_sub: true, free_require_share: true });
 
-  // upgrader: 55 / 200 * 90 = 24.75%, 1.06 times lower = 23.34%; roll 0 wins
+  // upgrader: 120 / 535 * 90 = 20.19%, 1.06 times lower = 19.04%; roll 0 wins
   const put = async (name) =>
     (await app.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [player.id, itemByName(name).id])).id;
-  const a = await put('Salamino Penguino');
-  const b = await put('Chimpanzini Bananini');
+  const a = await put('Ketupat Kepat');
+  const b = await put('La Taco Combinasion');
   rng.queue.push(0);
-  const up = await app.post('/api/upgrade', { user: player, body: { ids: [a, b], target: itemByName('Spooky and Pumpky').id, chance: 23.34 } });
+  const up = await app.post('/api/upgrade', { user: player, body: { ids: [a, b], target: itemByName('Rico Dinero').id, chance: 19.04 } });
   assert.equal(up.body.won, true, JSON.stringify(up.body));
 
   // admin gift
@@ -75,7 +75,7 @@ test('player card: case, free case, upgrader, admin gift, deposit and returned w
   for (const r of caseRows) assert.deepEqual(r.from, { type: 'case', case: { id: noob.id, name: { ru: noob.name_ru, uk: noob.name_uk, en: noob.name_en } } });
   const fc = caseBySlug('free');
   assert.deepEqual(byInv(inv, free.body.invId).from, { type: 'free', case: { id: fc.id, name: { ru: fc.name_ru, uk: fc.name_uk, en: fc.name_en } } });
-  assert.deepEqual(byInv(inv, up.body.invId).from, { type: 'upgrade', upgrade: { chance: 23.34, bet: 55 } });
+  assert.deepEqual(byInv(inv, up.body.invId).from, { type: 'upgrade', upgrade: { chance: 19.04, bet: 120 } });
   assert.deepEqual(byInv(inv, gift.body.invId).from, { type: 'admin', admin: { id: admin.id, name: 'Модер' } });
   assert.deepEqual(fromOf((i) => i.item.name === 'Cerberus'), [{ type: 'deposit', requestId: depId }]);
   assert.deepEqual(fromOf((i) => i.item.name === 'Capitano Moby'), [{ type: 'refund', requestId: wdId }]);

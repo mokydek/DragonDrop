@@ -139,11 +139,13 @@ test('brainrots: they leave the inventory; a win hands out the best brainrot it 
   assert.deepEqual([lost.body.roll.matches, lost.body.roll.win, lost.body.roll.item, lost.body.roll.coins], [0, 0, null, 0]);
   assert.equal((await app.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [ids2[0]])).n, 0);
   assert.equal(await bal(q), b0);
-  // too cheap a stake: refused, the brainrot stays
-  const cheap = [...app.ctx.game.catalog.items.values()].find((i) => i.enabled && i.value < 5);
+  // too cheap a stake: refused, the brainrot stays (the cheapest brainrots cost 5, so the smallest stake is 10 here)
+  await app.put('/api/admin/settings', { user: admin, body: { dice_min_bet: 10 } });
+  const cheap = [...app.ctx.game.catalog.items.values()].find((i) => i.enabled && i.value < 10);
   const [cid] = await give(q, [cheap.name]);
   assert.equal((await throwDice(q, { color: 'red', ids: [cid] })).body.error, 'bad_bet');
   assert.equal((await app.ctx.db.one('SELECT count(*)::int AS n FROM bs_inventory WHERE id = $1', [cid])).n, 1);
+  await app.put('/api/admin/settings', { user: admin, body: { dice_min_bet: 5 } });
 });
 
 test('the limits are settings (min not above max); referral codes count dice stakes as bets', async () => {
