@@ -767,8 +767,10 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
         throw new GameError('forbidden', 403);
       }
       const list = await requests.list({ kind, scope: String(req.query.scope || 'active'), methods });
-      // the deposits tab: whether brainrot deposits are open (for admins who handle them)
-      if (kind === 'deposit' && can(req.user, 'deposits_brainrots')) return { requests: list, brainrotsOpen: settings.get('deposits_brainrots_open') !== false };
+      // the deposits tab: whether brainrot deposits are open and the admin's Roblox nick (for admins who handle them)
+      if (kind === 'deposit' && can(req.user, 'deposits_brainrots')) {
+        return { requests: list, brainrotsOpen: settings.get('deposits_brainrots_open') !== false, tradeNick: req.user.trade_nick || null };
+      }
       return { requests: list };
     }),
   );
@@ -781,6 +783,14 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
       if (typeof open !== 'boolean') throw new GameError('bad_field', 400, { field: 'open' });
       await settings.update({ deposits_brainrots_open: open });
       return { brainrotsOpen: open };
+    }),
+  );
+  // the admin's Roblox nick: players send the trade to it when the admin accepts their deposit
+  r.put(
+    '/trade-nick',
+    wrap(async (req) => {
+      if (!can(req.user, 'deposits_brainrots')) throw new GameError('forbidden', 403);
+      return requests.setTradeNick(req.user, (req.body || {}).nick ?? null);
     }),
   );
   r.get(
@@ -799,8 +809,16 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
     if (section && !can(req.user, section)) throw new GameError('forbidden', 403);
     return id;
   };
-  r.get('/requests/:id', wrap(async (req) => requests.detail(await visibleReq(req))));
+  r.get(
+    '/requests/:id',
+    wrap(async (req) => {
+      const d = await requests.detail(await visibleReq(req));
+      // a brainrot deposit's card: the admin's Roblox nick for accepting it
+      return d.request.kind === 'deposit' && d.request.method === 'brainrot' ? { ...d, tradeNick: req.user.trade_nick || null } : d;
+    }),
+  );
   r.post('/requests/:id/messages', wrap(async (req) => requests.adminMessage(req.user, await visibleReq(req), (req.body || {}).text)));
+  r.post('/requests/:id/accept', wrap(async (req) => requests.accept(req.user, await visibleReq(req), (req.body || {}).nick)));
   r.post('/requests/:id/credit', wrap(async (req) => requests.credit(req.user, await visibleReq(req), (req.body || {}).amount)));
   r.post('/requests/:id/give', wrap(async (req) => requests.give(req.user, await visibleReq(req), (req.body || {}).itemId)));
   r.post('/requests/:id/status', wrap(async (req) => requests.setStatus(req.user, await visibleReq(req), (req.body || {}).status)));

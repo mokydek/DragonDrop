@@ -14,6 +14,15 @@ export const MSG_MAX = 2000;
 export const OFFER_MAX = 20; // different brainrots in one deposit request
 export const OFFER_COUNT_MAX = 99; // copies of one brainrot
 export const INVOICE_TTL_SEC = 24 * 3600; // older invoices are refused at checkout (the rate may have changed)
+// The queue of brainrot deposits: an admin accepts the next request, the player then has this long to send
+// the trade to the admin's Roblox nick. Waiting in the queue = a brainrot deposit with status 'new'.
+export const TRADE_WINDOW_SEC = 5 * 60;
+const QUEUED = "kind = 'deposit' AND method = 'brainrot' AND status = 'new'";
+// seconds left of the trade window of an accepted request (0 once it is over)
+const TRADE_LEFT = `CASE WHEN r.accepted_at IS NOT NULL THEN GREATEST(0, ceil(${TRADE_WINDOW_SEC} - extract(epoch FROM now() - r.accepted_at)))::int END`;
+// a waiting deposit's place in the queue (1 = next)
+const QUEUE_POS = `CASE WHEN r.kind = 'deposit' AND r.method = 'brainrot' AND r.status = 'new'
+  THEN (SELECT count(*)::int FROM bs_requests q WHERE q.kind = 'deposit' AND q.method = 'brainrot' AND q.status = 'new' AND q.id <= r.id) END`;
 
 const clip = (s, n = 4000) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
@@ -36,6 +45,9 @@ export function cleanText(v, min, max, code) {
 }
 
 export const starsToCoins = (stars, rate) => Math.floor(stars * rate + 1e-9);
+/** Seconds left of the trade window that began at `acceptedAt` (0 once it is over). */
+export const tradeLeftOf = (acceptedAt, now = Date.now()) =>
+  Math.max(0, Math.ceil(TRADE_WINDOW_SEC - (now - new Date(acceptedAt).getTime()) / 1000));
 /**
  * Invoice payload: player, stars, coins (fixed when the invoice is made), issue time, invoice id and
  * the auto promo code typed in (its id, if any).
@@ -117,6 +129,12 @@ export function createRequests({ db, settings, game, tg, config, access, referra
       coins: r.coins,
       stars: r.stars,
       promo: r.promo_code ? { code: r.promo_code, pct: r.promo_pct, bonus: Number(r.promo_bonus || 0) } : null,
+      // the deposit queue: place of a waiting request; who accepted it, the nick to trade to, seconds left
+      queuePos: r.queue_pos ?? null,
+      tradeNick: r.trade_nick || null,
+      acceptedAt: r.accepted_at || null,
+      tradeLeft: r.accepted_at ? (r.trade_left ?? tradeLeftOf(r.accepted_at)) : null,
+      cancelled: !!r.cancelled_at, // the player cancelled it (status 'rejected')
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
@@ -194,12 +212,12 @@ export function createRequests({ db, settings, game, tg, config, access, referra
     return { row, sysId: sys.id };
   }
 
-  /** Confirmation to the player (they can answer it) and a heads-up to the admins. */
-  async function announce(user, row, sysId) {
+  /** Confirmation to the player (they can answer it) and a heads-up to the admins. `pos`: place in the deposit queue. */
+  async function announce(user, row, sysId, pos = null) {
     const t = T(user.lang);
     const text =
       row.kind === 'deposit'
-        ? t.depositCreated(row.id, row.nick, row.details)
+        ? t.depositCreated(row.id, row.nick, row.details, pos)
         : t.withdrawCreated(row.id, row.nick, itemNames(row.items), row.total, row.exchange ? row.exchange.rest : 0);
     const sent = await tg.send(user.id, clip(text), replyKb(t, row.id, t.btnWrite));
     if (sent.ok) await db.query('UPDATE bs_request_msgs SET tg_msg_id = $2 WHERE id = $1', [sysId, sent.message.message_id]);
@@ -229,6 +247,12 @@ export function createRequests({ db, settings, game, tg, config, access, referra
     }
     const { row, sysId } = await db.tx(async (cl) => {
       await lockUserAndCheckLimit(cl, user.id);
+      // one place in the deposit queue per player: the request sent before goes first
+      const open = await cl.query(
+        "SELECT id FROM bs_requests WHERE user_id = $1 AND kind = 'deposit' AND method = 'brainrot' AND status IN ('new', 'active') ORDER BY id LIMIT 1",
+        [user.id],
+      );
+      if (open.rowCount) throw new GameError('deposit_open', 400, { id: Number(open.rows[0].id) });
       const res = await insertRequest(cl, user, { kind: 'deposit', nick, details, offer });
       // the auto promo code typed in: used up by this request, its bonus comes with the coins credited
       if (promo) {
@@ -239,8 +263,84 @@ export function createRequests({ db, settings, game, tg, config, access, referra
       }
       return res;
     });
-    await announce(user, row, sysId);
-    return { request: view(row) };
+    const queue = await queueState(user.id, row.id);
+    await announce(user, row, sysId, queue && queue.position ? queue.position : null);
+    return { request: view(row), queue };
+  }
+
+  // ------------------------------------------------------------ the deposit queue (player)
+  /**
+   * The player's brainrot deposit as the queue card shows it: `id` = that request (any status), none =
+   * the open one (null if there is none). state: queue (waiting) / trade (accepted: send the trade to
+   * `tradeNick` within `tradeLeft` s) / work (an admin handles it) / done / rejected / cancelled.
+   * In the queue: `position` (1 = next) and `eta`, seconds until the player's turn if every trade
+   * ahead takes the whole window.
+   */
+  async function queueState(userId, id = null) {
+    const cols = `r.id, r.status, r.nick, r.details, r.coins, r.items, r.accepted_at, r.trade_nick, r.cancelled_at, ${TRADE_LEFT} AS trade_left`;
+    const r = id
+      ? await db.one(`SELECT ${cols} FROM bs_requests r WHERE r.id = $1 AND r.user_id = $2 AND r.kind = 'deposit' AND r.method = 'brainrot'`, [id, userId])
+      : await db.one(
+          `SELECT ${cols} FROM bs_requests r
+            WHERE r.user_id = $1 AND r.kind = 'deposit' AND r.method = 'brainrot' AND r.status IN ('new', 'active')
+            ORDER BY r.id LIMIT 1`,
+          [userId],
+        );
+    if (!r) return null;
+    const state =
+      r.status === 'new' ? 'queue' : r.status === 'active' ? (r.accepted_at ? 'trade' : 'work') : r.status === 'rejected' && r.cancelled_at ? 'cancelled' : r.status;
+    const out = {
+      id: Number(r.id),
+      state,
+      nick: r.nick,
+      details: r.details,
+      coins: Number(r.coins),
+      canCancel: OPEN.includes(r.status) && Number(r.coins) === 0 && !(r.items || []).length,
+    };
+    if (state === 'queue') {
+      // ahead: waiting requests sent earlier; the trade windows running now end first
+      const q = await db.one(
+        `SELECT (SELECT count(*)::int FROM bs_requests WHERE ${QUEUED} AND id < $1) AS ahead,
+                (SELECT coalesce(min(ceil(${TRADE_WINDOW_SEC} - extract(epoch FROM now() - accepted_at))), 0)::int FROM bs_requests
+                  WHERE kind = 'deposit' AND method = 'brainrot' AND status = 'active'
+                    AND accepted_at > now() - make_interval(secs => ${TRADE_WINDOW_SEC})) AS serving`,
+        [r.id],
+      );
+      out.position = q.ahead + 1;
+      out.eta = q.ahead * TRADE_WINDOW_SEC + Math.max(0, q.serving);
+    }
+    if (r.accepted_at) {
+      out.tradeNick = r.trade_nick;
+      out.tradeLeft = r.trade_left;
+    }
+    return out;
+  }
+
+  /** The player cancels their brainrot deposit: while waiting or after being called, until anything is credited. */
+  async function cancel(user, id) {
+    const row = await db.tx(async (cl) => {
+      const r = (await cl.query('SELECT * FROM bs_requests WHERE id = $1 AND user_id = $2 FOR UPDATE', [id, user.id])).rows[0];
+      if (!r || r.kind !== 'deposit' || r.method !== 'brainrot') throw new GameError('not_found', 404);
+      if (!OPEN.includes(r.status)) throw new GameError('request_closed');
+      if (Number(r.coins) > 0 || (r.items || []).length) throw new GameError('request_in_work');
+      await cl.query("UPDATE bs_requests SET status = 'rejected', cancelled_at = now(), updated_at = now() WHERE id = $1", [id]);
+      await sysMsg(cl, id, user.id, 'status:cancelled');
+      // the auto promo code sent with it can be used again
+      if (r.promo_id) await cl.query('DELETE FROM bs_auto_promo_uses WHERE promo_id = $1 AND user_id = $2 AND request_id = $3', [r.promo_id, user.id, id]);
+      return r;
+    });
+    // the admin who called the player is waiting in the game: they are told
+    if (row.accepted_by) {
+      const a = await db.one('SELECT id, lang FROM bs_users WHERE id = $1 AND started_bot AND NOT blocked_bot', [row.accepted_by]);
+      if (a) {
+        const t = T(a.lang);
+        const extra = httpsWeb
+          ? { reply_markup: { inline_keyboard: [[{ text: t.btnOpenRequest, web_app: { url: `${config.webUrl}/?go=admin/deposits/${row.id}` } }]] } }
+          : {};
+        await markBlocked(await tg.send(a.id, clip(t.aCancelled(row.id, who(user))), extra), a.id);
+      }
+    }
+    return { queue: await queueState(user.id, id) };
   }
 
   /**
@@ -416,13 +516,18 @@ export function createRequests({ db, settings, game, tg, config, access, referra
   async function list({ kind, scope = 'active', methods = null } = {}) {
     if (kind !== 'deposit' && kind !== 'withdraw') throw new GameError('bad_field', 400, { field: 'kind' });
     if (!Object.hasOwn(SCOPES, scope)) throw new GameError('bad_field', 400, { field: 'scope' });
+    // in progress: the requests being handled first, then the deposit queue in its order
+    const order =
+      scope === 'active' || scope === 'open'
+        ? `CASE WHEN r.method = 'brainrot' AND r.status = 'new' AND r.kind = 'deposit' THEN r.id END ASC NULLS FIRST, r.updated_at DESC, r.id DESC`
+        : 'r.updated_at DESC, r.id DESC';
     const rows = await db.many(
       `SELECT r.*, u.id AS uid, u.first_name, u.username, u.photo_url,
-              lm.author AS last_author, lm.text AS last_text
+              lm.author AS last_author, lm.text AS last_text, ${QUEUE_POS} AS queue_pos, ${TRADE_LEFT} AS trade_left
          FROM bs_requests r JOIN bs_users u ON u.id = r.user_id ${LAST_MSG}
         WHERE r.kind = $1 AND ($2::text[] IS NULL OR r.status = ANY($2::text[]))
           AND ($3::text[] IS NULL OR r.method = ANY($3::text[]))
-        ORDER BY r.updated_at DESC, r.id DESC LIMIT 200`,
+        ORDER BY ${order} LIMIT 200`,
       [kind, SCOPES[scope], methods],
     );
     return rows.map(view);
@@ -450,7 +555,7 @@ export function createRequests({ db, settings, game, tg, config, access, referra
     const r = await db.one(
       `SELECT r.*, u.id AS uid, u.first_name, u.username, u.photo_url,
               u.balance AS user_balance, u.blocked_bot, u.started_bot, u.ref_code,
-              lm.author AS last_author, lm.text AS last_text
+              lm.author AS last_author, lm.text AS last_text, ${QUEUE_POS} AS queue_pos, ${TRADE_LEFT} AS trade_left
          FROM bs_requests r JOIN bs_users u ON u.id = r.user_id ${LAST_MSG}
         WHERE r.id = $1`,
       [id],
@@ -486,10 +591,49 @@ export function createRequests({ db, settings, game, tg, config, access, referra
       "INSERT INTO bs_request_msgs (request_id, author, author_id, text, tg_msg_id) VALUES ($1, 'admin', $2, $3, $4)",
       [id, admin.id, text, sent.ok ? sent.message.message_id : null],
     );
+    // a message doesn't take a brainrot deposit out of the queue: it leaves it when accepted
     await db.query(
-      "UPDATE bs_requests SET status = CASE WHEN status = 'new' THEN 'active' ELSE status END, admin_id = $2, updated_at = now() WHERE id = $1",
+      `UPDATE bs_requests SET status = CASE WHEN status = 'new' AND NOT (kind = 'deposit' AND method = 'brainrot') THEN 'active' ELSE status END,
+              admin_id = $2, updated_at = now() WHERE id = $1`,
       [id, admin.id],
     );
+    return { delivered: sent.ok, ...(await detail(id)) };
+  }
+
+  /** The admin's Roblox nick (players send the deposit trade to it); empty clears it. */
+  async function setTradeNick(admin, raw) {
+    const nick = raw === '' || raw === null ? null : cleanNick(raw);
+    await db.query('UPDATE bs_users SET trade_nick = $2 WHERE id = $1', [admin.id, nick]);
+    return { tradeNick: nick };
+  }
+
+  /**
+   * Accepts a brainrot deposit (the next one in the queue, or any open one not accepted yet): the player
+   * gets TRADE_WINDOW_SEC to send the trade to the admin's Roblox nick (`rawNick`, else the one saved;
+   * a nick given here is saved for the next time). The bot tells the player.
+   */
+  async function accept(admin, id, rawNick) {
+    let nick = rawNick === undefined || rawNick === null || rawNick === '' ? null : cleanNick(rawNick);
+    const row = await db.tx(async (cl) => {
+      const r = await lockOpen(cl, id, 'deposit');
+      if (r.accepted_at) throw new GameError('already_accepted');
+      if (!nick) nick = (await cl.query('SELECT trade_nick FROM bs_users WHERE id = $1', [admin.id])).rows[0]?.trade_nick || null;
+      if (!nick) throw new GameError('trade_nick_missing');
+      await cl.query('UPDATE bs_users SET trade_nick = $2 WHERE id = $1', [admin.id, nick]);
+      const upd = await cl.query(
+        "UPDATE bs_requests SET status = 'active', accepted_at = now(), accepted_by = $2, trade_nick = $3, admin_id = $2, updated_at = now() WHERE id = $1 RETURNING *",
+        [id, admin.id, nick],
+      );
+      const sys = await cl.query("INSERT INTO bs_request_msgs (request_id, author, author_id, text) VALUES ($1, 'system', $2, $3) RETURNING id", [id, admin.id, `accept:${nick}`]);
+      const u = (await cl.query('SELECT lang FROM bs_users WHERE id = $1', [r.user_id])).rows[0];
+      return { ...upd.rows[0], lang: u ? u.lang : 'ru', sysId: sys.rows[0].id };
+    });
+    const t = T(row.lang);
+    const kb = [[{ text: t.btnReply, callback_data: `rq:${row.id}` }]];
+    if (httpsWeb) kb.unshift([{ text: t.btnOpenQueue, web_app: { url: `${config.webUrl}/?go=queue` } }]);
+    const sent = await tg.send(row.user_id, clip(t.depositAccepted(row.id, nick, row.details || '')), { reply_markup: { inline_keyboard: kb } });
+    if (sent.ok) await db.query('UPDATE bs_request_msgs SET tg_msg_id = $2 WHERE id = $1', [row.sysId, sent.message.message_id]);
+    await markBlocked(sent, row.user_id);
     return { delivered: sent.ok, ...(await detail(id)) };
   }
 
@@ -594,11 +738,15 @@ export function createRequests({ db, settings, game, tg, config, access, referra
     userReply,
     ownRequest,
     findByTgMessage,
+    queueState,
+    cancel,
     list,
     sectionOf,
     counts,
     detail,
     adminMessage,
+    setTradeNick,
+    accept,
     credit,
     give,
     setStatus,
