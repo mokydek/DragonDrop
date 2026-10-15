@@ -1222,7 +1222,7 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
     {
       const { page, errors } = await open({ user: partner, path: '/#/profile' });
       await page.waitForSelector('.p-card');
-      assert.equal(await page.locator('.p-link').count(), 0);
+      assert.equal(await page.locator('.p-link[href="#/refs"]').count(), 0);
       await page.evaluate(() => (location.hash = '#/refs'));
       await page.waitForSelector('.case-grid');
       assert.deepEqual(errors, []);
@@ -1236,9 +1236,9 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
       if (i < 2) await payStars(u, (i + 1) * 100);
     }
     const { page, errors } = await open({ user: partner, path: '/#/profile' });
-    await page.waitForSelector('.p-link');
-    assert.equal((await page.textContent('.p-link')).trim(), 'Рефералы');
-    await page.click('.p-link');
+    await page.waitForSelector('.p-link[href="#/refs"]');
+    assert.equal((await page.textContent('.p-link[href="#/refs"]')).trim(), 'Рефералы');
+    await page.click('.p-link[href="#/refs"]');
     await page.waitForSelector('.ref-card');
     assert.equal(await page.evaluate(() => location.hash), '#/refs');
     assert.equal(await page.textContent('.vh-title'), 'Рефералы');
@@ -1285,7 +1285,7 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
 
     // streamer mode: the sums are blurred; the players' names and the code stay
     await page.click('[data-act="streamer"]');
-    await page.click('.p-link');
+    await page.click('.p-link[href="#/refs"]');
     await page.waitForSelector('.ref-card');
     await page.waitForTimeout(250);
     const blur = (sel) => page.$$eval(sel, (els) => els.map((e) => /^blur\(/.test(getComputedStyle(e).filter)));
@@ -1300,7 +1300,7 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
     // the main admin gives the code its own %: shown instead of the level's
     await demo.app.post('/api/bootstrap', { user: BOSS });
     assert.equal((await demo.app.put('/api/admin/referrals/ZHENYA', { user: BOSS, body: { bonusPct: 12 } })).status, 200);
-    await page.click('.p-link');
+    await page.click('.p-link[href="#/refs"]');
     await page.waitForFunction(() => document.querySelector('.ref-gives')?.textContent.includes('+12%'));
     assert.equal(await page.textContent('.ref-own'), 'Индивидуальные условия: +12% к пополнениям независимо от уровня');
     // switched off: the partner still sees it, marked
@@ -1319,12 +1319,110 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
     await demo.app.put('/api/admin/referrals/ZHENYA', { user: ME, body: { owner: '' } });
     const p2 = await open({ user: partner, path: '/#/profile' });
     await p2.page.waitForSelector('.p-card');
-    assert.equal(await p2.page.locator('.p-link').count(), 0);
+    assert.equal(await p2.page.locator('.p-link[href="#/refs"]').count(), 0);
     assert.deepEqual(p2.errors, []);
     await p2.page.context().close();
   } finally {
     await demo.app.del('/api/admin/referrals/ZHENYA', { user: ME });
   }
+});
+
+test('invite friends: from the profile — the link (copied by a tap), sending it, the friends and what their top-ups brought, moved to the balance', { skip }, async () => {
+  const host = demo.others[5];
+  const friends = ['Рома', 'Вика'].map((n, i) => ({ id: 7501 + i, first_name: n, language_code: 'ru' }));
+  const { page, errors } = await open({ user: host, path: '/#/profile' });
+  // always in the profile, under the switches
+  await page.waitForSelector('.p-link[href="#/invite"]');
+  assert.equal((await page.textContent('.p-link[href="#/invite"]')).trim(), 'Пригласить друзей');
+  await page.click('.p-link[href="#/invite"]');
+  await page.waitForSelector('.invite-link');
+  assert.equal(await page.evaluate(() => location.hash), '#/invite');
+  assert.equal(await page.textContent('.vh-title'), 'Пригласить друзей');
+  assert.equal(await page.textContent('.ref-lbl'), 'Твоя ссылка');
+  const link = await page.getAttribute('.invite-link', 'data-link');
+  assert.match(link, /^https:\/\/t\.me\/DragonDrop_Bot\?start=inv_[A-Za-z0-9]{8}$/);
+  assert.equal((await page.textContent('.invite-link')).trim(), link.replace('https://', ''));
+  assert.equal(await page.textContent('.ref-gives'), 'Получай 5% с каждого пополнения друзей, которые пришли по ней');
+  assert.equal((await page.textContent('[data-act="invite-send"]')).trim(), 'Отправить ссылку друзьям');
+  assert.equal((await page.textContent('[data-act="invite-claim"]')).trim(), 'Перевести на баланс');
+  assert.equal(await page.isDisabled('[data-act="invite-claim"]'), true, 'nothing to move yet');
+  assert.equal((await page.textContent('.empty-box')).trim(), 'Пока никого — отправь ссылку друзьям');
+  // the link is copied by a tap
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.click('.invite-link');
+  await page.waitForSelector('.toast.ok');
+  assert.equal(await page.textContent('.toast.ok'), 'Скопировано');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), link);
+  // sent through Telegram: its share sheet with the picture and a button with the link
+  await page.click('[data-act="invite-send"]');
+  await page.waitForFunction(() => window.__tgCalls.some((c) => c[0] === 'shareMessage'));
+  assert.deepEqual(await page.evaluate(() => window.__tgCalls.filter((c) => c[0] === 'shareMessage')), [['shareMessage', `prep_${host.id}`]]);
+
+  // two friends come by the link; one of them tops up twice: 100 ⭐ and 300 ⭐ → 5 + 15
+  const code = link.split('start=')[1];
+  for (const f of friends) await demo.app.message(f, `/start ${code}`);
+  await payStars(friends[0], 100);
+  await payStars(friends[0], 300);
+  await page.reload();
+  await page.waitForSelector('.invite-friends .row');
+  const stats = await page.$$eval('.stats .stat', (els) => els.map((e) => [e.querySelector('.s-lbl').textContent, e.querySelector('.s-val').textContent.trim()]));
+  assert.deepEqual(stats.map(([l, v]) => [l, num(v)]), [
+    ['Друзей пришло', 2],
+    ['Пополнили баланс', 1],
+    ['Заработано всего', 20],
+  ]);
+  // the friends, newest first, and what each brought
+  assert.deepEqual(await page.$$eval('.invite-friends .row', (els) => els.map((e) => [e.querySelector('b').textContent, e.querySelector('.invite-earn').textContent.trim()])), [
+    ['Вика', '—'],
+    ['Рома', '+20'],
+  ]);
+  assert.equal(await page.textContent('.sec-title:has(.cnt) .cnt'), '2');
+  assert.equal(num(await page.textContent('.invite-sum')), 20);
+  assert.equal(await page.isDisabled('[data-act="invite-claim"]'), false);
+
+  // streamer mode: the sums are blurred, the link stays
+  await page.click('.view-head .back');
+  await page.waitForSelector('.p-card');
+  await page.click('[data-act="streamer"]');
+  await page.click('.p-link[href="#/invite"]');
+  await page.waitForSelector('.invite-friends .row');
+  await page.waitForTimeout(250);
+  const blur = (sel) => page.$$eval(sel, (els) => els.map((e) => /^blur\(/.test(getComputedStyle(e).filter)));
+  assert.deepEqual(await blur('.invite-sum b, .invite-earn b, .stats .stat .s-val b'), [true, true, true]);
+  assert.deepEqual(await blur('.invite-link'), [false]);
+  await page.click('.view-head .back');
+  await page.click('[data-act="streamer"]');
+  await page.click('.p-link[href="#/invite"]');
+  await page.waitForSelector('.invite-friends .row');
+
+  // moved to the balance: all of it at once, then nothing to move
+  const before = num(await page.textContent('#bal'));
+  await page.click('[data-act="invite-claim"]');
+  await page.waitForSelector('.toast.ok');
+  assert.equal(await page.textContent('.toast.ok'), 'Переведено на баланс: +20');
+  await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 20, before);
+  assert.equal(num(await page.textContent('.invite-sum')), 0);
+  assert.equal(await page.isDisabled('[data-act="invite-claim"]'), true);
+  assert.equal(Number((await demo.ctx.db.one('SELECT invite_balance FROM bs_users WHERE id = $1', [host.id])).invite_balance), 0);
+  // a small phone: nothing sticks out
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0);
+  assert.deepEqual(errors, []);
+  await page.context().close();
+
+  // the admin player card: who invited the friend; the inviter's friends and what they gave
+  const a = await open({ path: `/#/admin/users/${friends[0].id}` });
+  await a.page.waitForSelector('#uBal');
+  const kv = async () => a.page.$$eval('.kv', (els) => Object.fromEntries(els.filter((e) => e.children.length > 1).map((e) => [e.children[0].textContent, e.lastElementChild.textContent.trim()])));
+  assert.equal((await kv())['Пригласил'], host.first_name);
+  await a.page.click(`.kv a[href="#/admin/users/${host.id}"]`);
+  await a.page.waitForFunction((id) => document.querySelector('.kv b')?.textContent === String(id), host.id);
+  const card = await kv();
+  assert.equal(num(card['Друзья по ссылке']), 2);
+  assert.equal(num(card['Заработал на друзьях']), 20);
+  assert.deepEqual(a.errors, []);
+  await a.page.context().close();
 });
 
 test('referral levels: the main admin edits the levels and a code\'s own %; an admin links the partner; regular admins see no levels or %', { skip }, async () => {
@@ -2679,7 +2777,7 @@ test('sound: coins when a brainrot is sold (one, all); the Sound switch in the p
   // on by default, next to streamer mode
   assert.equal(await page.getAttribute('[data-act="sound"]', 'aria-pressed'), 'true');
   assert.equal((await page.textContent('[data-act="sound"]')).trim(), 'Звук');
-  assert.deepEqual(await page.$$eval('.p-tools > *', (els) => els.map((e) => e.dataset.act || e.className)), ['streamer', 'sound']);
+  assert.deepEqual(await page.$$eval('.p-tools > *', (els) => els.map((e) => e.dataset.act || e.className)), ['streamer', 'sound', 'p-link']);
   // one brainrot: a few coins, heard (not silent, not clipping)
   await page.evaluate(OFFLINE_AUDIO);
   await page.click('[data-act="sell"]');

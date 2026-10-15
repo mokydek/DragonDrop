@@ -91,14 +91,15 @@ export function createTg(getBot, config, files = {}) {
       return bot.api.createInvoiceLink(title, description, payload, '', 'XTR', [{ label, amount: stars }]);
     },
 
-    shareFallbackUrl(lang, { halloween = false } = {}) {
-      const link = `https://t.me/${this.botUsername}`;
+    /** A share link of the bot (or of `url`, e.g. a player's invite link) with the caption. */
+    shareFallbackUrl(lang, { halloween = false, url = '' } = {}) {
+      const link = url || `https://t.me/${this.botUsername}`;
       const text = halloween ? T(lang).shareCaptionHalloween : T(lang).shareCaption;
       return `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
     },
 
-    /** Prepared message for Telegram.WebApp.shareMessage (Bot API 8.0+). */
-    async prepareShare(userId, lang, { halloween = false } = {}) {
+    /** Prepared message for Telegram.WebApp.shareMessage (Bot API 8.0+); its button opens `url` or the bot. */
+    async prepareShare(userId, lang, { halloween = false, url = '' } = {}) {
       const bot = getBot();
       if (!bot) throw new Error('bot disabled');
       const photo = halloween ? imageUrl('banner-halloween', files.bannerHalloween) : imageUrl('banner', files.banner);
@@ -111,7 +112,7 @@ export function createTg(getBot, config, files = {}) {
           thumbnail_url: photo,
           caption: halloween ? T(lang).shareCaptionHalloween : T(lang).shareCaption,
           reply_markup: {
-            inline_keyboard: [[{ text: T(lang).shareButton, url: `https://t.me/${this.botUsername}?start=share` }]],
+            inline_keyboard: [[{ text: T(lang).shareButton, url: url || `https://t.me/${this.botUsername}?start=share` }]],
           },
         },
         { allow_user_chats: true, allow_group_chats: true, allow_channel_chats: true, allow_bot_chats: false },

@@ -56,6 +56,7 @@ export function createAuth({ config, db, users, live, settings, access }) {
         const data = validateInitData(h.slice(4), config.botToken, config.initDataMaxAge);
         if (!data) return res.status(401).json({ error: 'unauthorized' });
         req.tgUser = data.user;
+        req.startParam = data.startParam; // the Mini App opened by a link with ?startapp=…
         // Bootstrap refreshes the profile (name, username, photo); other calls just load the row.
         user = req.path === '/bootstrap' ? null : await users.ensureUser(data.user.id);
         if (!user) user = await users.upsertFromTelegram(data.user);
@@ -101,7 +102,7 @@ export function meView(u) {
 }
 
 export function createApi(deps) {
-  const { config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo } = deps;
+  const { config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites } = deps;
   // admins: which admin panel sections they see (the main admin decides for the others)
   const adminPart = (u) => (u.is_admin ? { adminSections: access.sections(u.id) } : {});
   const r = express.Router();
@@ -161,6 +162,8 @@ export function createApi(deps) {
     limitLight,
     wrap(async (req) => {
       const u = req.user;
+      // opened by a friend's link (?startapp=inv_CODE): the friend gets a share of the player's top-ups
+      if (invites && req.startParam) await invites.bind(u, req.startParam).catch((e) => console.warn('[invites] bind failed:', e.message));
       return {
         me: meView(u),
         ...adminPart(u),
@@ -228,6 +231,31 @@ export function createApi(deps) {
   );
   // a partner's referral codes: level, stats and the players who came with them
   r.get('/referrals/mine', auth, limitLight, wrap(async (req) => referrals.mine(req.user.id)));
+
+  // ------------------------------------------------------------ invite friends
+  // the player's own link, the friends who came by it and what their top-ups brought; moving it to the balance
+  r.get('/invites', auth, limitLight, wrap(async (req) => invites.state(req.user)));
+  r.post('/invites/claim', auth, limitActions, wrap(async (req) => invites.claim(req.user)));
+  // the link sent from the app: a prepared message (picture, caption, a button with the link) or a share link
+  r.post(
+    '/invites/share',
+    auth,
+    limitActions,
+    wrap(async (req) => {
+      const url = invites.link(await invites.codeOf(req.user.id));
+      if (!url) throw new GameError('bot_disabled', 503);
+      const opts = { halloween: !!settings.get('halloween'), url };
+      let preparedId = null;
+      if (tg.enabled && String(req.get('authorization') || '').startsWith('tma ')) {
+        try {
+          preparedId = await tg.prepareShare(req.user.id, req.user.lang, opts);
+        } catch (e) {
+          console.warn('[invites] savePreparedInlineMessage failed:', e.message);
+        }
+      }
+      return { preparedId, url: tg.shareFallbackUrl(req.user.lang, opts) };
+    }),
+  );
   r.get('/inventory', auth, limitLight, wrap(async (req) => ({ inventory: await game.inventory(req.user.id) })));
   r.get(
     '/catalog',

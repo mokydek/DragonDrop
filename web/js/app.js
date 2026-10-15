@@ -33,6 +33,7 @@ const ICON = {
     '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.9-3.6 3.4-5.5 6.5-5.5s5.6 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.4 3.5 5.2"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>',
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
+  gift: '<svg viewBox="0 0 24 24"><rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5v7A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-7M12 8.5V21M12 8.5S10.8 4 8.2 4a2.25 2.25 0 0 0 0 4.5M12 8.5S13.2 4 15.8 4a2.25 2.25 0 0 1 0 4.5"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/></svg>',
   dice: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="8.6" cy="8.6" r="1.35" fill="currentColor"/><circle cx="12" cy="12" r="1.35" fill="currentColor"/><circle cx="15.4" cy="15.4" r="1.35" fill="currentColor"/></svg>',
   eyeOff:
@@ -72,6 +73,7 @@ const S = {
   fast: store.getItem('bs_fast') === '1', // fast spin: cases and the upgrader stop in about a second (this device)
   partner: false, // has a referral code of their own: the "Referrals" screen in the profile
   refs: null, // that screen: the last /referrals/mine answer and which code is shown
+  invites: null, // "Invite friends" (profile): the last /invites answer — the link, the friends and what they brought
   sound: store.getItem('bs_sound') !== '0', // sounds: coins when selling, the upgrader win (this device; on by default)
   streamer: store.getItem('bs_streamer') === '1', // streamer mode: balance, sums, own name / ID / Roblox nick and players' names hidden (this device)
   halloween: store.getItem('bs_hw') === '1', // Halloween look (admin switch); the last known state until the server answers
@@ -445,6 +447,7 @@ function route() {
   if (tab === 'dice') return { tab: 'dice', view: 'dice' };
   if (tab === 'profile') return { tab: 'profile', view: 'profile' };
   if (tab === 'refs' && S.partner) return { tab: 'profile', view: 'refs' };
+  if (tab === 'invite') return { tab: 'profile', view: 'invite' };
   if (tab === 'admin' && adminUi()) return { tab: 'admin', view: 'admin', sub: arg || '', id: arg2 };
   return { tab: 'cases', view: 'cases' };
 }
@@ -483,6 +486,7 @@ async function renderView() {
   else if (r.view === 'dice') viewDice(view);
   else if (r.view === 'profile') viewProfile(view);
   else if (r.view === 'refs') viewRefs(view);
+  else if (r.view === 'invite') viewInvite(view);
   else if (r.view === 'admin') {
     if (!adminModule) adminModule = await import('./admin.js');
     adminModule.renderAdmin(view, r, adminCtx());
@@ -1862,7 +1866,7 @@ function viewProfile(view) {
       </div>
       <div class="p-bal">${money(me.balance, 18)}</div>
     </div>
-    <div class="p-tools">${toggleBtn('streamer', S.streamer, ICON.eyeOff, t('streamerMode'))}${toggleBtn('sound', S.sound, ICON.sound, t('sound'))}${
+    <div class="p-tools">${toggleBtn('streamer', S.streamer, ICON.eyeOff, t('streamerMode'))}${toggleBtn('sound', S.sound, ICON.sound, t('sound'))}<a class="p-link" href="#/invite">${raw(ICON.gift)}<span>${t('invite')}</span>${raw(ICON.chevron)}</a>${
       S.partner ? html`<a class="p-link" href="#/refs">${raw(ICON.users)}<span>${t('refs')}</span>${raw(ICON.chevron)}</a>` : ''
     }</div>
     <h3 class="sec-title">${t('stats')}</h3>
@@ -1963,6 +1967,86 @@ function drawRefs(view) {
         )}</div>`
       : html`<div class="empty-box"><p>${t('refNone')}</p></div>`}`,
   );
+}
+
+// ------------------------------------------------------------------ invite friends
+/** The player's own link, what the friends' top-ups brought (moved to the balance from here), the friends. */
+async function viewInvite(view) {
+  if (!S.invites) render(view, html`${inviteHead()}<div class="spinner"></div>`);
+  else drawInvite(view);
+  try {
+    S.invites = await API.get('/invites');
+  } catch (e) {
+    if (!S.invites) return showError(e);
+  }
+  if (route().view === 'invite') drawInvite(view);
+}
+
+function inviteHead() {
+  return html`<div class="view-head">
+    <button class="back" data-act="back" aria-label="${t('back')}">${raw(ICON.back)}</button>
+    <div class="vh-title">${t('invite')}</div>
+  </div>`;
+}
+
+function drawInvite(view) {
+  const v = S.invites;
+  const stat = (val, k) => html`<div class="stat"><div class="s-val">${val}</div><div class="s-lbl">${t(k)}</div></div>`;
+  render(
+    view,
+    html`${inviteHead()}
+    <div class="ref-card">
+      <div class="ref-lbl">${t('invYourLink')}</div>
+      ${v.link ? html`<button class="ref-code invite-link" data-act="copy-invite" data-link="${v.link}">${v.link.replace(/^https:\/\//, '')}${raw(ICON.copy)}</button>` : ''}
+      <div class="ref-gives">${v.pct > 0 ? t('invGives', { p: fmt(v.pct) }) : t('invOff')}</div>
+    </div>
+    <button class="btn primary big invite-send" data-act="invite-send" ${v.link ? '' : raw('disabled')}>${t('invSend')}</button>
+    <div class="invite-wallet">
+      <span class="invite-sum"><small>${t('invAvailable')}</small>${money(v.balance, 18)}</span>
+      <button class="btn small" data-act="invite-claim" ${v.balance > 0 ? '' : raw('disabled')}>${t('invClaim')}</button>
+    </div>
+    <h3 class="sec-title">${t('stats')}</h3>
+    <div class="stats">${stat(fmt(v.friends), 'invFriends')}${stat(fmt(v.paying), 'invPaying')}${stat(money(v.earned, 15), 'invEarned')}</div>
+    <h3 class="sec-title">${t('invList')} <span class="cnt">${fmt(v.friends)}</span></h3>
+    ${v.list.length
+      ? html`<div class="list invite-friends">${v.list.map(
+          (f) =>
+            html`<div class="row"><span class="row-main"><b>${f.name}</b><small>${fmtDate(f.at)}</small></span><span class="invite-earn">${f.earned > 0 ? html`+${money(f.earned, 12)}` : '—'}</span></div>`,
+        )}</div>`
+      : html`<div class="empty-box"><p>${t('invNone')}</p></div>`}`,
+  );
+}
+
+/** Sends the player's link: Telegram's share sheet with the picture and a button, or a share link. */
+async function sendInvite() {
+  try {
+    const r = await API.post('/invites/share');
+    haptic.tick();
+    if (r.preparedId && tg && tg.shareMessage && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) tg.shareMessage(r.preparedId, () => {});
+    else if (tg && tg.openTelegramLink) tg.openTelegramLink(r.url);
+    else window.open(r.url, '_blank', 'noopener');
+  } catch (e) {
+    showError(e);
+  }
+}
+
+/** Moves what the friends brought to the balance. */
+async function claimInvites() {
+  if (S.busy) return;
+  S.busy = true;
+  try {
+    const r = await API.post('/invites/claim');
+    setBalance(r.balance);
+    S.invites = { ...S.invites, balance: 0 };
+    haptic.notify('success');
+    sfxCoins(3);
+    toast(t('invClaimed', { n: fmt(r.claimed) }), 'ok');
+  } catch (e) {
+    showError(e);
+  } finally {
+    S.busy = false;
+    if (route().view === 'invite') drawInvite($('#view'));
+  }
 }
 
 async function refreshInventory() {
@@ -2525,7 +2609,7 @@ const actions = {
   back: () => {
     if (S.busy) return;
     if (history.length > 1) history.back();
-    else go(route().view === 'refs' ? '#/profile' : '#/cases');
+    else go(route().view === 'refs' || route().view === 'invite' ? '#/profile' : '#/cases');
   },
   promo: () => openPromo(),
   topup: () => openTopup(),
@@ -2674,6 +2758,17 @@ const actions = {
     S.refs.i = Number(b.dataset.i) || 0;
     drawRefs($('#view'));
   },
+  'copy-invite': async (b) => {
+    haptic.tick();
+    try {
+      await navigator.clipboard.writeText(b.dataset.link);
+      toast(t('copied'), 'ok');
+    } catch {
+      /* no clipboard: the link is on the screen */
+    }
+  },
+  'invite-send': () => sendInvite(),
+  'invite-claim': () => claimInvites(),
   'copy-ref': async (b) => {
     haptic.tick();
     try {

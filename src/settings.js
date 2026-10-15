@@ -46,6 +46,7 @@ export const SETTINGS_SCHEMA = {
   admin_hidden: { type: 'list', values: ADMIN_SECTIONS, def: [] }, // admin sections the other admins don't see
   ref_count_stars: { type: 'boolean', def: true }, // Telegram Stars payments count for referral codes
   deposits_brainrots_open: { type: 'boolean', def: true }, // players can send brainrot deposit requests (admins close it for a while)
+  invite_pct: { type: 'number', min: 0, max: 50, def: 5 }, // invite friends (main admin): the inviter gets this % of a friend's top-ups; 0 = off
   // auto promo code (main admin): every auto_promo_hours a new code made up by the server, with a bonus of
   // auto_promo_min..auto_promo_max % to one top-up of each player who types it in
   auto_promo: { type: 'boolean', def: true },

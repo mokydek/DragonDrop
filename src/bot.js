@@ -15,7 +15,7 @@ function safeEqual(a, b) {
   return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
 }
 
-export function createBot({ config, db, settings, game, users, live, paths, requests }) {
+export function createBot({ config, db, settings, game, users, live, paths, requests, invites }) {
   const bot = new Bot(config.botToken, config.telegramApiRoot ? { client: { apiRoot: config.telegramApiRoot } } : {});
   const httpsWeb = /^https:\/\//.test(config.webUrl);
   const adminAttempts = new Map();
@@ -94,6 +94,8 @@ export function createBot({ config, db, settings, game, users, live, paths, requ
     const u = await users.upsertFromTelegram(ctx.from, { started: true });
     if (u.is_banned) return ctx.reply(T(u.lang).banned);
     if (u.awaiting) await db.query('UPDATE bs_users SET awaiting = NULL WHERE id = $1', [u.id]);
+    // came by a friend's link: the friend gets a share of the player's top-ups
+    if (invites && ctx.match) await invites.bind(u, ctx.match).catch((e) => console.warn('[invites] bind failed:', e.message));
     await sendWelcome(ctx, u);
   });
 
