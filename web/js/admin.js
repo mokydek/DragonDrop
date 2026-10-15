@@ -1226,6 +1226,11 @@ async function broadcast(body) {
 const SECTION_OF = { deposit: 'deposits', withdraw: 'withdrawals' };
 const REQ_SCOPES = ['active', 'done', 'rejected'];
 const isOpen = (r) => r.method === 'brainrot' && (r.status === 'new' || r.status === 'active');
+// the admin's Roblox nick: players in the deposit queue send the trade to it once the admin accepts them
+let myTradeNick = null;
+/** A live mm:ss of the trade window the player has left (`over`: what it says at 0). */
+const tradeTimer = (left, over) =>
+  h`<b class="q-left${left > 0 ? '' : ' over'}" data-until="${Date.now() + left * 1000}" data-over="${over}">${left > 0 ? C.mmss(left) : over}</b>`;
 
 function refreshCounts() {
   C.API.get('/admin/requests/counts')
@@ -1239,7 +1244,11 @@ function avatar(u) {
   return h`<span class="avatar sm">${u.photo ? h`<img src="${u.photo}" alt="" referrerpolicy="no-referrer">` : (u.name || '?')[0].toUpperCase()}</span>`;
 }
 
-const statusBadge = (r) => h`<span class="badge st-${r.status}">${C.t('a.r.st.' + r.status)}</span>`;
+// a request the player cancelled is declined, marked as theirs; a deposit in the queue shows its place
+const statusBadge = (r) => {
+  const st = r.cancelled ? 'cancelled' : r.status;
+  return h`<span class="badge st-${st}">${C.t('a.r.st.' + st)}${r.queuePos ? ' · ' + C.t('a.r.qpos', { n: r.queuePos }) : ''}</span>`;
+};
 
 function reqRow(r) {
   let sub;
@@ -1257,7 +1266,11 @@ function reqRow(r) {
   return h`<a class="row req-row ${r.waiting ? 'wait' : ''}" href="#/admin/${SECTION_OF[r.kind]}/${r.id}" data-req="${r.id}">
     ${avatar(r.user)}
     <span class="row-main"><b>#${r.id} · ${r.user.name}</b><small>${sub}</small>${last ? h`<small class="req-last">${last}</small>` : ''}</span>
-    <span class="row-side">${statusBadge(r)}<small class="req-time">${C.fmtDateTime(r.updatedAt)}</small></span>
+    <span class="row-side">${statusBadge(r)}${
+      isOpen(r) && r.tradeLeft > 0
+        ? h`<small class="req-time">⏱ ${tradeTimer(r.tradeLeft, C.t('a.r.timeUp'))}</small>`
+        : h`<small class="req-time">${C.fmtDateTime(r.updatedAt)}</small>`
+    }</span>
   </a>`;
 }
 
@@ -1265,8 +1278,9 @@ async function reqList(body, kind) {
   stopReqTimer();
   const my = ++reqSeq;
   const load = () => C.API.get(`/admin/requests?kind=${kind}&scope=${reqScope}`);
-  const { requests, brainrotsOpen } = await load();
+  const { requests, brainrotsOpen, tradeNick } = await load();
   if (!body.isConnected || my !== reqSeq) return;
+  if (tradeNick !== undefined) myTradeNick = tradeNick;
   const listHtml = (list) => (list.length ? h`<div class="list">${list.map(reqRow)}</div>` : h`<div class="empty-box"><p>${C.t('a.r.empty')}</p></div>`);
   const gateText = (open) => C.t(open ? 'a.depOpen' : 'a.depClosed');
   C.render(
@@ -1274,9 +1288,32 @@ async function reqList(body, kind) {
     h`${brainrotsOpen !== undefined
       ? h`<label class="switch dep-gate${brainrotsOpen ? '' : ' closed'}"><input type="checkbox" id="depGate" ${brainrotsOpen ? C.raw('checked') : ''}><i></i><span>${gateText(brainrotsOpen)}</span></label>`
       : ''}
+    ${tradeNick !== undefined
+      ? h`<form class="form trade-nick" id="tradeNickForm" autocomplete="off">
+          <label>${C.t('a.myNick')}<span class="bal-row two"><input class="input" id="tradeNickIn" maxlength="32" value="${tradeNick || ''}" autocapitalize="off" autocorrect="off" spellcheck="false"><button class="btn small" type="submit">${C.t('a.save')}</button></span></label>
+          <small class="note">${C.t('a.myNickNote')}</small>
+        </form>`
+      : ''}
     <div class="seg adm-seg">${REQ_SCOPES.map((s) => h`<button type="button" data-scope="${s}" class="${reqScope === s ? 'on' : ''}">${C.t('a.r.sc.' + s)}</button>`)}</div>
     <div id="reqList">${listHtml(requests)}</div>`,
   );
+  // the admin's Roblox nick for the deposit trades
+  body.querySelector('#tradeNickForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = body.querySelector('#tradeNickIn');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const r = await C.API.put('/admin/trade-nick', { nick: input.value.trim() });
+      myTradeNick = r.tradeNick;
+      input.value = r.tradeNick || '';
+      C.toast(C.t('a.saved'), 'ok');
+    } catch (err) {
+      adminError(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
   // brainrot deposits: close for a while / open again
   body.querySelector('#depGate')?.addEventListener('change', async (e) => {
     const box = e.target;
@@ -1334,7 +1371,8 @@ function sysText(m, r) {
     const it = r.items.find((x) => x.id === Number(arg)) || C.S.itemsById.get(Number(arg));
     return C.t('a.r.sys.give', { name: it ? it.name : '#' + arg });
   }
-  if (k === 'status') return C.t('a.r.sys.' + (arg === 'done' ? 'done' : 'rejected'));
+  if (k === 'status') return C.t('a.r.sys.' + (arg === 'done' ? 'done' : arg === 'cancelled' ? 'cancelled' : 'rejected'));
+  if (k === 'accept') return C.t('a.r.sys.accept', { nick: arg });
   return m.text;
 }
 
@@ -1440,7 +1478,8 @@ function pickBuffs(body, r, itemId) {
 let reqSig = '';
 let reqDrawn = 0; // bumps on every redraw of the card; a refresh that started before it is stale
 const chatSig = (d) => `${d.messages.length}:${d.messages.at(-1)?.id || 0}`;
-const cardSig = (d) => `${d.request.status}:${d.request.coins}:${d.request.items.length}:${d.request.user.balance}:${d.request.user.blockedBot}`;
+const cardSig = (d) =>
+  `${d.request.status}:${d.request.coins}:${d.request.items.length}:${d.request.user.balance}:${d.request.user.blockedBot}:${d.request.acceptedAt}:${d.request.queuePos}`;
 
 function drawReq(body, d, { keep = false } = {}) {
   const r = d.request;
@@ -1464,6 +1503,16 @@ function drawReq(body, d, { keep = false } = {}) {
       ${u.blockedBot ? h`<div class="note bad">${C.t('a.r.blocked')}</div>` : ''}
       ${r.nick ? h`<div class="kv"><span>${C.t('a.r.nick')}</span><b class="code" data-copy="${r.nick}">${r.nick}</b></div>` : ''}
       ${u.ref ? h`<div class="kv"><span>${C.t('a.refOf')}</span><b class="code">${u.ref}</b></div>` : ''}
+      ${r.acceptedAt
+        ? h`<div class="kv"><span>${C.t('a.r.tradeNick')}</span><b class="code" data-copy="${r.tradeNick}">${r.tradeNick}</b></div>
+           ${open ? h`<div class="kv"><span>${C.t('a.r.tradeLeft')}</span>${tradeTimer(r.tradeLeft, C.t('a.r.timeUp'))}</div>` : ''}`
+        : open && r.kind === 'deposit'
+          ? h`<div class="q-accept">
+              ${myTradeNick ? '' : h`<label class="fld">${C.t('a.r.acceptNick')}<input class="input" id="acceptNick" maxlength="32" autocapitalize="off" autocorrect="off" spellcheck="false"></label>`}
+              <button type="button" class="btn primary big" data-ra="accept">${C.t('a.r.accept')}</button>
+              ${myTradeNick ? h`<small class="note">${C.t('a.r.acceptNote', { nick: myTradeNick })}</small>` : ''}
+            </div>`
+          : ''}
       ${r.method === 'stars' ? h`<div class="kv"><span>${C.t('a.r.stars')}</span><b class="money"><span class="emo">⭐</span>${C.fmt(r.stars)} → ${C.money(r.coins, 13)}</b></div>` : ''}
       ${r.kind === 'deposit' && r.offer
         ? h`<h4 class="sec-title">${C.t('a.r.details')} <span class="cnt">${r.offer.reduce((s, i) => s + i.count, 0)}</span></h4>
@@ -1544,6 +1593,21 @@ function drawReq(body, d, { keep = false } = {}) {
     if (!ra || ra.disabled) return;
     const act = ra.dataset.ra;
     try {
+      if (act === 'accept') {
+        // the player gets 5 minutes to send the trade to the admin's nick (typed in here the first time)
+        const input = body.querySelector('#acceptNick');
+        const nick = input ? input.value.trim() : '';
+        if (input && nick.replace(/^@+/, '').length < 3) {
+          input.focus();
+          return adminError({ code: 'trade_nick_missing' });
+        }
+        ra.disabled = true;
+        const res = await C.API.post(`/admin/requests/${r.id}/accept`, nick ? { nick } : {});
+        myTradeNick = res.request.tradeNick || myTradeNick;
+        if (res.delivered) C.toast(C.t('a.saved'), 'ok');
+        else C.toast(C.t('a.r.notDeliveredToast'), 'error');
+        return after(res);
+      }
       if (act === 'credit') {
         const input = body.querySelector('#reqAmount');
         const n = Number(input.value);
@@ -1578,6 +1642,7 @@ function drawReq(body, d, { keep = false } = {}) {
         return after(res);
       }
     } catch (err) {
+      ra.disabled = false;
       adminError(err);
     }
   };
@@ -1589,6 +1654,7 @@ async function reqDetail(body, kind, id) {
   if (!Number.isSafeInteger(id) || id <= 0) return C.go(`#/admin/${SECTION_OF[kind]}`);
   const d = await C.API.get(`/admin/requests/${id}`);
   if (!body.isConnected || my !== reqSeq) return;
+  if (d.tradeNick !== undefined) myTradeNick = d.tradeNick;
   if (d.request.kind !== kind) return C.go(`#/admin/${SECTION_OF[d.request.kind]}/${id}`);
   drawReq(body, d);
   // the player's answers arrive through the bot — show them while the card is open
@@ -1600,6 +1666,7 @@ async function reqDetail(body, kind, id) {
     const drawn = reqDrawn;
     try {
       const n = await C.API.get(`/admin/requests/${id}`);
+      if (n.tradeNick !== undefined) myTradeNick = n.tradeNick;
       const chat = body.querySelector('#reqChat');
       // an action redrew the card while this refresh was on its way: its data is older
       if (!body.isConnected || !chat || n.request.id !== id || drawn !== reqDrawn || my !== reqSeq) return;
