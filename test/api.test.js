@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { startApp, scriptedRng, users } from './helpers.js';
 import { signWebToken } from '../src/auth.js';
+import { paths } from '../src/server.js';
 
 const rng = scriptedRng();
 let app;
@@ -307,7 +308,14 @@ test('free case: share + subscription + cooldown', async () => {
   assert.match(share.body.url, /^https:\/\/t\.me\/share\/url\?url=https%3A%2F%2Ft\.me%2FDragonDrop_Bot/);
   const prep = app.tg.calls('savePreparedInlineMessage').at(-1).payload;
   assert.equal(prep.result.type, 'photo');
-  assert.equal(prep.result.photo_url, 'https://api.dragondrop.test/img/banner.jpg');
+  // the hash of the picture in the URL: Telegram keeps what it once fetched by a URL (the old BrainrotSpin
+  // banner sat at the same address), so a changed picture gets a new one
+  const v = crypto.createHash('sha1').update(readFileSync(paths.banner)).digest('hex').slice(0, 10);
+  assert.equal(prep.result.photo_url, `https://api.dragondrop.test/img/banner.jpg?v=${v}`);
+  assert.equal(prep.result.thumbnail_url, prep.result.photo_url);
+  const pic = await fetch(`${app.base}/img/banner.jpg?v=${v}`);
+  assert.equal(pic.status, 200);
+  assert.equal(Buffer.from(await pic.arrayBuffer()).length, readFileSync(paths.banner).length);
   assert.equal(prep.result.reply_markup.inline_keyboard[0][0].url, 'https://t.me/DragonDrop_Bot?start=share');
 
   const shared = await app.post('/api/free/shared', { user: u });
@@ -355,6 +363,47 @@ test('free case: share + subscription + cooldown', async () => {
   assert.ok(par.filter((r) => r.status !== 200).every((r) => r.body.error === 'cooldown'));
 
   await app.put('/api/admin/settings', { user: users.alice, body: { channel: '', free_cooldown_hours: 24 } });
+});
+
+test('free case: a player Telegram answers with an error (never joined) is asked to subscribe; a channel the bot cannot see is "cannot check"', async () => {
+  await app.makeAdmin(users.alice.id);
+  await app.put('/api/admin/settings', { user: users.alice, body: { channel: '@dragondrop_news' } });
+  const st = app.tg.state;
+  try {
+    // for some players who never joined, Telegram gives an error instead of the status "left"
+    for (const [id, err] of [
+      [2002, 'Bad Request: PARTICIPANT_ID_INVALID'],
+      [2003, 'Bad Request: user not found'],
+    ]) {
+      const u = { id, first_name: 'Gleb', language_code: 'ru' };
+      await app.post('/api/bootstrap', { user: u });
+      await app.post('/api/free/shared', { user: u });
+      st.memberErrors.set(id, err);
+      const chk = await app.post('/api/free/check', { user: u });
+      assert.equal(chk.status, 200, JSON.stringify(chk.body));
+      assert.equal(chk.body.subscribed, false, err);
+      assert.equal((await app.post('/api/free/open', { user: u })).body.error, 'need_sub', err);
+      // after joining the channel: subscribed, the FREE case opens
+      st.memberErrors.delete(id);
+      st.members.add(id);
+      assert.equal((await app.post('/api/free/check', { user: u })).body.subscribed, true);
+      const ok = await app.post('/api/free/open', { user: u });
+      assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    }
+    // the bot can't see the channel's members (not an admin there): "can't check", not "not subscribed"
+    const v = { id: 2004, first_name: 'Vera', language_code: 'ru' };
+    await app.post('/api/bootstrap', { user: v });
+    await app.post('/api/free/shared', { user: v });
+    st.channelError = 'Bad Request: member list is inaccessible';
+    const chk = await app.post('/api/free/check', { user: v });
+    assert.equal(chk.status, 503);
+    assert.equal(chk.body.error, 'sub_check_failed');
+    assert.equal((await app.post('/api/free/open', { user: v })).body.error, 'sub_check_failed');
+  } finally {
+    st.channelError = '';
+    st.memberErrors.clear();
+    await app.put('/api/admin/settings', { user: users.alice, body: { channel: '' } });
+  }
 });
 
 test('promo codes: limits, expiry, reuse and case-insensitivity', async () => {

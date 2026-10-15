@@ -2,7 +2,8 @@
 // (and draws the Halloween look); the bot's /start and the shared post use the Halloween picture and text.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync } from 'node:fs';
+import crypto from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
 import { startApp } from './helpers.js';
 import { paths } from '../src/server.js';
 
@@ -26,6 +27,8 @@ async function admin() {
   return a;
 }
 const setHalloween = (a, on) => app.put('/api/admin/settings', { user: a, body: { halloween: on } });
+/** The picture's URL for Telegram: the hash of the file in it, so Telegram fetches a changed picture again. */
+const picUrl = (name, file) => `https://api.dragondrop.test/img/${name}.jpg?v=${crypto.createHash('sha1').update(readFileSync(file)).digest('hex').slice(0, 10)}`;
 /** The bytes a sendPhoto call uploaded (first /start) — null when it reused a Telegram file id. */
 const uploaded = (p) => (/^attach:\/\//.test(p.photo) ? p[p.photo.slice('attach://'.length)] : null);
 
@@ -116,8 +119,8 @@ test('sharing the bot while Halloween is on: the Halloween picture and caption',
     const r = await app.post('/api/free/share', { user: u });
     assert.equal(r.status, 200);
     const prep = app.tg.calls('savePreparedInlineMessage').at(-1).payload;
-    assert.equal(prep.result.photo_url, 'https://api.dragondrop.test/img/banner-halloween.jpg');
-    assert.equal(prep.result.thumbnail_url, 'https://api.dragondrop.test/img/banner-halloween.jpg');
+    assert.equal(prep.result.photo_url, picUrl('banner-halloween', paths.bannerHalloween));
+    assert.equal(prep.result.thumbnail_url, picUrl('banner-halloween', paths.bannerHalloween));
     assert.match(prep.result.caption, /^🎃 Хэллоуин в DragonDrop/);
     assert.match(decodeURIComponent(new URL(r.body.url).searchParams.get('text')), /^🎃 Хэллоуин в DragonDrop/);
   } finally {
@@ -125,13 +128,13 @@ test('sharing the bot while Halloween is on: the Halloween picture and caption',
   }
   const r = await app.post('/api/free/share', { user: u });
   const prep = app.tg.calls('savePreparedInlineMessage').at(-1).payload;
-  assert.equal(prep.result.photo_url, 'https://api.dragondrop.test/img/banner.jpg');
+  assert.equal(prep.result.photo_url, picUrl('banner', paths.banner));
   assert.match(prep.result.caption, /^🎁 Залетай в DragonDrop/);
   assert.match(new URL(r.body.url).searchParams.get('text'), /^🎁 Залетай/);
 });
 
 test('the Halloween picture is served like the usual one (Telegram downloads it by URL)', async () => {
-  const res = await fetch(`${app.base}/img/banner-halloween.jpg`);
+  const res = await fetch(`${app.base}${new URL(picUrl('banner-halloween', paths.bannerHalloween)).pathname}?v=1`);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'image/jpeg');
   const buf = Buffer.from(await res.arrayBuffer());

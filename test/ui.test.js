@@ -243,6 +243,49 @@ test('free case: share via Telegram, open, then cooldown', { skip }, async () =>
   await page.context().close();
 });
 
+test('FREE case: the card says what it asks for; a player Telegram answers with an error (never joined) is asked to subscribe', { skip }, async () => {
+  const P = { id: 5301, first_name: 'Глеб', language_code: 'ru' };
+  const st = demo.app.tg.state;
+  const hint = async (settings) => {
+    await demo.ctx.settings.update(settings);
+    const { page } = await open({ user: P });
+    await page.waitForSelector('.free-card .free-sub');
+    const text = await page.textContent('.free-card .free-sub');
+    await page.context().close();
+    return text;
+  };
+  try {
+    // no channel set: only the share
+    assert.equal(await hint({ channel: '' }), 'Ссылка на бота в любой чат');
+    assert.equal(await hint({ channel: '@dragondrop_news' }), 'Подписка на канал + ссылка в любой чат');
+    assert.equal(await hint({ free_require_share: false }), 'Подписка на наш канал');
+    assert.equal(await hint({ channel: '' }), 'Без заданий — просто открой');
+    await demo.ctx.settings.update({ channel: '@dragondrop_news', free_require_share: true });
+    // Telegram: PARTICIPANT_ID_INVALID instead of "left" for this player
+    st.memberErrors.set(P.id, 'Bad Request: PARTICIPANT_ID_INVALID');
+    const { page, errors } = await open({ user: P, path: `/#/case/${demo.bySlug.free.id}` });
+    await page.waitForSelector('#freeTasks [data-act="check-sub"]');
+    assert.deepEqual(await page.locator('#freeTasks .task-text').allTextContents(), ['Подпишись на наш канал', 'Скинь ссылку на бота в любой чат']);
+    assert.equal(await page.locator('#freeTasks [data-act="subscribe"]').count(), 1, 'a button to the channel');
+    await page.click('#freeTasks [data-act="check-sub"]');
+    await page.waitForSelector('.toast.error');
+    assert.equal(await page.textContent('.toast.error'), 'Подпишись на канал и нажми «Проверить»');
+    // joined: the task is done
+    st.memberErrors.delete(P.id);
+    st.members.add(P.id);
+    await page.waitForSelector('.toast', { state: 'detached', timeout: 6000 });
+    await page.click('#freeTasks [data-act="check-sub"]');
+    await page.waitForSelector('#freeTasks .task.done');
+    assert.equal(await page.locator('#freeTasks [data-act="check-sub"]').count(), 0);
+    assert.deepEqual(errors, []);
+    await page.context().close();
+  } finally {
+    st.memberErrors.clear();
+    st.members.delete(P.id);
+    await demo.ctx.settings.update({ channel: '', free_require_share: true });
+  }
+});
+
 test('nick case: free with DragonDrop in the Telegram name, a hint without it, then the cooldown', { skip }, async () => {
   const c = demo.ctx.game.nickCase();
   demo.app.tg.state.users.set(ME.id, { first_name: 'Тест', username: 'brainrot_fan' }); // Telegram: no DragonDrop yet
