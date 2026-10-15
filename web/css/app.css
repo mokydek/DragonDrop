@@ -138,7 +138,8 @@ a { color: inherit; }
 :where(.ap-card, .free-card, .case-card, .task, .cooldown, .slot, .stat, .p-card, .crash-stage, .dice-stage, .ref-card, .lvl-next, .lvl,
   .row, .control, .empty-box, .tu-opt, .buffs, .bt, .item, .r-tile, .drop, .top24, .btn, .icon-btn, .back, .bal, .chip, .tgl, .p-link,
   .dc-chip, .toast, .pop, .summary, .req-acts, .req-box, .dep-row, .loot-row, .vh-price, .ref-code, .ref-own, .free-state, .buff,
-  .input:not(textarea), .swatch, .count-seg button, .up-pcts button, [data-view='profile'] .stats, [data-view='refs'] .stats) {
+  .input:not(textarea), .swatch, .count-seg button, .up-pcts button, [data-view='profile'] .stats, [data-view='refs'] .stats, [data-view='invite'] .stats,
+  .invite-wallet) {
   --cut: 10px;
   --edge: var(--line);
   --fill: var(--panel);
@@ -976,8 +977,8 @@ select.input {
 .best-art .art-img { width: 24px; height: 24px; }
 .best-name { min-width: 0; font: 800 12.5px/1.2 var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the player's own numbers: a spec sheet, the name on the left, the value on the right */
-[data-view='profile'] .stats, [data-view='refs'] .stats { --cut: 12px; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 2px 14px; }
-:is([data-view='profile'], [data-view='refs']) .stat {
+[data-view='profile'] .stats, [data-view='refs'] .stats, [data-view='invite'] .stats { --cut: 12px; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 2px 14px; }
+:is([data-view='profile'], [data-view='refs'], [data-view='invite']) .stat {
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
@@ -990,9 +991,9 @@ select.input {
   background: none;
   border-bottom: 1px dashed var(--line);
 }
-:is([data-view='profile'], [data-view='refs']) .stat:last-child { border-bottom: 0; }
-:is([data-view='profile'], [data-view='refs']) .s-lbl { flex: none; margin: 0; }
-:is([data-view='profile'], [data-view='refs']) .s-val { min-width: 0; min-height: 0; justify-content: flex-end; font-size: 13.5px; text-align: right; }
+:is([data-view='profile'], [data-view='refs'], [data-view='invite']) .stat:last-child { border-bottom: 0; }
+:is([data-view='profile'], [data-view='refs'], [data-view='invite']) .s-lbl { flex: none; margin: 0; }
+:is([data-view='profile'], [data-view='refs'], [data-view='invite']) .s-val { min-width: 0; min-height: 0; justify-content: flex-end; font-size: 13.5px; text-align: right; }
 :is([data-view='profile'], [data-view='refs']) .stat.best .s-val { max-width: 62%; }
 .inv-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 24px 0 10px; }
 .inv-head .sec-title { flex: 1; margin: 0 1px; }
@@ -1027,6 +1028,16 @@ select.input {
 .lvl.on .lvl-pct { color: var(--a1); }
 .ref-own { --cut: 8px; --edge: var(--a1-line); --fill: var(--a1-faint); margin-top: 8px; padding: 10px 12px; font-size: 12.5px; font-weight: 700; line-height: 1.35; }
 .ref-players .row { padding: 9px 12px; }
+
+/* ---------------------------------------------------------------- invite friends: the link, sending it, what the friends brought */
+.invite-link { font: 700 13.5px/1.3 var(--font-text); letter-spacing: 0; text-align: left; }
+.invite-send { margin-top: 10px; }
+.invite-wallet { --cut: 12px; --edge: var(--a1-line); --fill: linear-gradient(90deg, var(--a1-soft), transparent 70%), var(--panel); display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; }
+.invite-sum { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.invite-sum small { font: 800 9.5px/1.25 var(--font-text); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.invite-wallet .btn { flex: none; }
+.invite-friends .row { padding: 9px 12px; }
+.invite-earn { flex: none; display: inline-flex; align-items: center; gap: 2px; font: 700 13px/1 var(--font-display); color: var(--a1); }
 
 /* ---------------------------------------------------------------- rocket (crash): a chart */
 .crash-stage {
