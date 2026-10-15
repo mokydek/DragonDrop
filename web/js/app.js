@@ -876,10 +876,21 @@ function tileStep(box) {
   return tile.offsetWidth + gap;
 }
 
+/**
+ * Where brainrot `index` sits on its strip: its left edge from the strip's start and its width, read
+ * from the layout (not index × width), so a strip lands right even if a brainrot came out wider.
+ */
+function tileAt(track, index) {
+  const tiles = track.children;
+  const t = tiles[index];
+  if (!t) return { left: index * 110, width: 100 };
+  return { left: t.offsetLeft - tiles[0].offsetLeft, width: t.offsetWidth };
+}
+
+/** The strip offset that puts brainrot `index` under the marker, `jitter` px off its middle. */
 function offsetFor(box, index, jitter = 0) {
-  const step = tileStep(box);
-  const tileW = step - 8;
-  return -(index * step - (box.clientWidth / 2 - tileW / 2) + jitter);
+  const { left, width } = tileAt(box.querySelector('.r-track'), index);
+  return box.clientWidth / 2 - left - width / 2 - jitter;
 }
 
 /** Before an opening the brainrots drift along the strips, round after round. */
@@ -892,7 +903,7 @@ function positionIdle() {
     const from = offsetFor(box, 6);
     track.style.transform = `translateX(${from}px)`;
     if (still || typeof track.animate !== 'function') continue;
-    const len = IDLE_LOOP * tileStep(box);
+    const len = tileAt(track, 6 + IDLE_LOOP).left - tileAt(track, 6).left; // one round: the loop has no seam
     idleAnims.push(
       track.animate([{ transform: `translateX(${from}px)` }, { transform: `translateX(${from - len}px)` }], {
         duration: Math.round((len / IDLE_SPEED) * 1000),
@@ -920,14 +931,21 @@ async function spinTo(c, winners) {
   // stay, new ones follow, the winner comes SPIN_TILES brainrots later
   const plans = boxes.map((box, i) => {
     const track = box.querySelector('.r-track');
-    const step = tileStep(box);
+    const tiles = [...track.children];
+    const at = tiles.map((t) => t.offsetLeft - tiles[0].offsetLeft);
     let x = new DOMMatrixReadOnly(getComputedStyle(track).transform).m41;
-    // the brainrots already passed on the left go (the strip would grow with every opening)
-    const drop = Math.max(0, Math.min(track.children.length, Math.floor(-x / step) - 2));
-    x += drop * step;
-    const center = (box.clientWidth / 2 - (step - 8) / 2 - x) / step; // the brainrot under the marker
-    const keep = Math.min(track.children.length - drop, Math.ceil((box.clientWidth - x) / step) + 1); // those in view
-    const win = Math.round(center) + SPIN_TILES;
+    const right = (k) => x + at[k] + tiles[k].offsetWidth; // where brainrot k ends on screen
+    let gone = 0; // the brainrots already passed on the left
+    while (gone < tiles.length - 1 && right(gone) <= 0) gone++;
+    let center = gone; // the one under the marker
+    while (center < tiles.length - 1 && right(center) <= box.clientWidth / 2) center++;
+    let seen = center; // the last one in view
+    while (seen < tiles.length - 1 && x + at[seen + 1] < box.clientWidth) seen++;
+    // those passed go but two (the strip would grow with every opening), those in view stay
+    const drop = Math.max(0, gone - 2);
+    x += at[drop];
+    const keep = Math.min(tiles.length, seen + 2) - drop;
+    const win = center - drop + SPIN_TILES;
     const items = buildStrip(c, winners[i], { win, length: win + 8, prefix: (stripItems[i] || []).slice(drop, drop + keep) });
     return { box, track, x, drop, keep, win, items };
   });
@@ -945,12 +963,12 @@ async function spinTo(c, winners) {
     stripItems[i] = p.items;
   });
   void boxes[0].offsetWidth;
-  for (const p of plans) {
-    const step = tileStep(p.box);
-    const jitter = (Math.random() - 0.5) * (step - 30);
+  // where each strip stops: its winner under the marker, a little off its middle
+  const ends = plans.map((p) => offsetFor(p.box, p.win, (Math.random() - 0.5) * Math.max(0, tileAt(p.track, p.win).width - 22)));
+  plans.forEach((p, i) => {
     p.track.style.transition = `transform ${duration + Math.round(Math.random() * (fast ? 60 : 300))}ms cubic-bezier(0.1, 0.72, 0.12, 1)`;
-    p.track.style.transform = `translateX(${offsetFor(p.box, p.win, jitter)}px)`;
-  }
+    p.track.style.transform = `translateX(${ends[i]}px)`;
+  });
   // a tick (sound and haptic) each time a brainrot passes the marker (first strip)
   const box = boxes[0];
   const track = box.querySelector('.r-track');
