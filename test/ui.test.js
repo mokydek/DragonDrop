@@ -1351,7 +1351,7 @@ test('invite friends (the referral page): link and partner promo code (copied, c
   assert.equal(await page.textContent('.inv-pending-lbl'), 'Предварительный доход');
   const sat = new Date(payoutWindow().next);
   const when = `${sat.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, ${sat.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-  assert.equal(await page.textContent('.inv-pending-val small'), `Начислится в субботу, ${when}`);
+  assert.equal((await page.textContent('.inv-pending-val small')).replace(/\u00a0/g, ' '), `Начислится в субботу, ${when}`);
   assert.equal(num(await page.textContent('.inv-pending-val .money')), 0);
   assert.equal(await page.textContent('.invite-wallet .inv-lbl'), 'Реферальный баланс');
   assert.equal((await page.textContent('[data-act="invite-claim"]')).trim(), 'Перевести на баланс');
