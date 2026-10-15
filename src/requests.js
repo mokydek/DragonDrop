@@ -58,7 +58,7 @@ function parseIds(ids, max = 100) {
   return out;
 }
 
-export function createRequests({ db, settings, game, tg, config, access, referrals, autoPromo }) {
+export function createRequests({ db, settings, game, tg, config, access, referrals, autoPromo, invites }) {
   const httpsWeb = /^https:\/\//.test(config.webUrl || '');
   const section = (kind) => (kind === 'withdraw' ? 'withdrawals' : 'deposits');
 
@@ -373,6 +373,7 @@ export function createRequests({ db, settings, game, tg, config, access, referra
         await cl.query('INSERT INTO bs_balance_log (user_id, delta, reason) VALUES ($1, $2, $3)', [p.userId, bonus, `refbonus:#${id}`]);
       }
       if (promoBonus > 0) await cl.query('INSERT INTO bs_balance_log (user_id, delta, reason) VALUES ($1, $2, $3)', [p.userId, promoBonus, `autopromo:#${id}`]);
+      if (invites) await invites.reward(cl, p.userId, coins, id); // the share of the friend who invited the player
       return { id, coins, bonus, promoBonus, stars, balance: upd.rows[0].balance, lang: upd.rows[0].lang };
     });
   }
@@ -531,6 +532,7 @@ export function createRequests({ db, settings, game, tg, config, access, referra
         await cl.query('INSERT INTO bs_balance_log (user_id, delta, reason, admin_id) VALUES ($1, $2, $3, $4)', [row.user_id, promoBonus, `autopromo:#${id}`, admin.id]);
       }
       await cl.query('UPDATE bs_requests SET coins = coins + $2, bonus = bonus + $3, promo_bonus = promo_bonus + $4 WHERE id = $1', [id, n, bonus, promoBonus]);
+      if (invites) await invites.reward(cl, row.user_id, n, id);
       await touch(cl, id, admin.id);
       await sysMsg(cl, id, admin.id, `credit:${n}`);
     });
@@ -546,6 +548,7 @@ export function createRequests({ db, settings, game, tg, config, access, referra
       await game.giveItem(cl, row.user_id, it, 'deposit', { ref: row.id });
       const entry = { itemId: it.id, name: it.name, value: it.value, emoji: it.emoji };
       await cl.query('UPDATE bs_requests SET items = items || $2::jsonb WHERE id = $1', [id, JSON.stringify([entry])]);
+      if (invites) await invites.reward(cl, row.user_id, it.value, id);
       await touch(cl, id, admin.id);
       await sysMsg(cl, id, admin.id, `give:${it.id}`);
     });

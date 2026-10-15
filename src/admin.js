@@ -48,7 +48,7 @@ function imageData(v) {
   return v;
 }
 
-export function createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, broadcaster }) {
+export function createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, broadcaster }) {
   const r = express.Router();
   r.use((req, res, next) => (req.user && req.user.is_admin ? next() : res.status(403).json({ error: 'forbidden' })));
 
@@ -522,6 +522,7 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
         [id, skip],
       );
       const out = { user: userRow(u), stats: await game.stats(id), inventory: await inventoryWithSources(id), log };
+      if (invites) out.invites = await invites.adminView(u); // who invited the player, the friends they brought
       // the account's own upgrader bad luck: only the main admin sees and changes it
       if (isMain(req.user)) out.luck = Number(u.upgrade_luck);
       return out;
@@ -696,11 +697,12 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
 
   // ------------------------------------------------------------ settings
   // the Stars rate, the upgrader luck, what the other admins see, whether Stars count for referral
-  // codes, the referral levels, the auto promo code, the buffs on deposited brainrots, the
-  // maintenance and what players can use are seen and changed by the main admin only; other admins
-  // don't get these fields
+  // codes, the referral levels, the auto promo code, the buffs on deposited brainrots, the inviters'
+  // share of their friends' top-ups, the maintenance and what players can use are seen and changed by
+  // the main admin only; other admins don't get these fields
   const OWNER_SETTINGS = [
     'stars_rate', 'upgrade_luck', 'admin_hidden', 'ref_count_stars', 'ref_levels', 'auto_promo', 'auto_promo_min', 'auto_promo_max', 'auto_promo_hours', 'buffs',
+    'invite_pct',
     'maintenance', ...Object.values(GATES),
   ];
   // the rest of the upgrader settings and the rocket ones: other admins see them, but only the main
