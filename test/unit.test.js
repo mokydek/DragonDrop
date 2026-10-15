@@ -201,8 +201,8 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
     'a.e.partner_not_found',
     ...['deposit', 'withdraw'].map((k) => 'a.r.' + k),
     ...['active', 'done', 'rejected'].map((k) => 'a.r.sc.' + k),
-    ...['new', 'active', 'done', 'rejected'].map((k) => 'a.r.st.' + k),
-    ...['created', 'credit', 'give', 'done', 'rejected'].map((k) => 'a.r.sys.' + k),
+    ...['new', 'active', 'done', 'rejected', 'cancelled'].map((k) => 'a.r.st.' + k),
+    ...['created', 'credit', 'give', 'done', 'rejected', 'accept', 'cancelled'].map((k) => 'a.r.sys.' + k),
     ...['users', 'new24', 'online', 'opened24', 'upgrades24', 'coins', 'items_value'].map((k) => 'a.st.' + k),
     ...Object.keys(SETTINGS_SCHEMA).map((k) => 'a.s.' + k),
     'a.sec.depBrainrots',
@@ -222,7 +222,7 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
   // deposits / withdrawals: player errors have a message, admin-only errors an admin message
   const req = rf(new URL('../src/requests.js', import.meta.url), 'utf8');
   const reqCodes = new Set([...req.matchAll(/(?:GameError\(|cleanText\([^;]*?, )'([a-z_]+)'/g)].map((m) => m[1]));
-  const playerSide = ['bad_nick', 'bad_details', 'bad_offer', 'too_many_requests', 'bad_stars', 'bot_disabled', 'invoice_failed', 'items_missing', 'need_exchange', 'exchange_too_expensive', 'not_withdrawable', 'deposits_closed', 'promo_used'];
+  const playerSide = ['bad_nick', 'bad_details', 'bad_offer', 'too_many_requests', 'bad_stars', 'bot_disabled', 'invoice_failed', 'items_missing', 'need_exchange', 'exchange_too_expensive', 'not_withdrawable', 'deposits_closed', 'promo_used', 'deposit_open', 'request_in_work'];
   for (const c of playerSide) {
     assert.ok(reqCodes.has(c), `requests.js no longer throws ${c}`);
     assert.ok('e.' + c in DICTS.ru, `no message for error ${c}`);

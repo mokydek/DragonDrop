@@ -361,6 +361,7 @@ test('the main admin chooses what the other admins see: sections, requests by ki
   assert.equal((await app.get('/api/admin/requests?kind=deposit', { user: admin })).status, 403);
   assert.deepEqual(await counts(admin), { deposit: 0, withdraw: 0 });
   app.tg.reset();
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE id = $1", [depId]); // one deposit in the queue at a time
   const dep2 = await app.post('/api/requests/deposit', { user: p, body: { nick: 'AliceRBX', details: 'Tim Cheese' } });
   assert.equal(dep2.status, 200, JSON.stringify(dep2.body));
   assert.equal(toAdmin().length, 0);
