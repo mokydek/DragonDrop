@@ -1748,7 +1748,8 @@ export function fmtPayout(iso) {
   const day = t('invWeekdays').split('|')[d.getDay()] || '';
   const date = d.toLocaleDateString(loc, { day: 'numeric', month: 'long' });
   const time = d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${day}, ${date}, ${time}`;
+  // the date and the time stay on one line: «в субботу, / 17 октября, 15:00»
+  return `${day}, ${`${date}, ${time}`.replace(/ /g, '\u00a0')}`;
 }
 export function fmtDateTime(iso) {
   const loc = current === 'en' ? 'en-US' : current === 'uk' ? 'uk-UA' : 'ru-RU';
