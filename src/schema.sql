@@ -293,6 +293,28 @@ CREATE TABLE IF NOT EXISTS bs_request_msgs (
 CREATE INDEX IF NOT EXISTS bs_request_msgs_req_idx ON bs_request_msgs (request_id, id);
 CREATE INDEX IF NOT EXISTS bs_request_msgs_tg_idx ON bs_request_msgs (tg_msg_id) WHERE tg_msg_id IS NOT NULL;
 
+-- Invite friends: every player has a link of their own (invite_code). A new player who came by it is
+-- that player's friend (inviter_id); the inviter gets invite_pct % of the friend's top-ups, kept apart
+-- (invite_balance) until moved to the balance; invite_earned is all they ever got this way.
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS invite_code TEXT;
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS inviter_id BIGINT REFERENCES bs_users(id) ON DELETE SET NULL;
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS invited_at TIMESTAMPTZ;
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS invite_balance BIGINT NOT NULL DEFAULT 0 CHECK (invite_balance >= 0);
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS invite_earned BIGINT NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS bs_users_invite_code_idx ON bs_users (invite_code) WHERE invite_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS bs_users_inviter_idx ON bs_users (inviter_id) WHERE inviter_id IS NOT NULL;
+
+-- what each top-up of a friend brought the inviter
+CREATE TABLE IF NOT EXISTS bs_invite_rewards (
+  id          BIGSERIAL PRIMARY KEY,
+  inviter_id  BIGINT NOT NULL REFERENCES bs_users(id) ON DELETE CASCADE,
+  user_id     BIGINT NOT NULL REFERENCES bs_users(id) ON DELETE CASCADE,
+  request_id  BIGINT,
+  coins       BIGINT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS bs_invite_rewards_inviter_idx ON bs_invite_rewards (inviter_id, user_id);
+
 -- Row level security with no policies: the app connects as the table owner
 -- (unaffected), while public APIs such as Supabase's Data API get no access.
 ALTER TABLE bs_users        ENABLE ROW LEVEL SECURITY;
@@ -314,3 +336,4 @@ ALTER TABLE bs_dice         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_auto_promos  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_auto_promo_uses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_ref_codes    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bs_invite_rewards ENABLE ROW LEVEL SECURITY;

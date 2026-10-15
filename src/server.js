@@ -18,6 +18,7 @@ import { createCrash } from './crash.js';
 import { createDice } from './dice.js';
 import { createAutoPromo } from './autopromo.js';
 import { createReferrals, levelsOnce } from './referrals.js';
+import { createInvites } from './invites.js';
 import { GameError } from './game.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -81,14 +82,15 @@ export async function createServer(env = process.env, overrides = {}) {
   const users = createUsers({ db, settings, config });
   const access = createAccess({ settings, users });
   const referrals = createReferrals({ db, settings });
+  const invites = createInvites({ db, settings, tg });
   const autoPromo = createAutoPromo({ db, settings, rng: overrides.autoPromoRng, now: overrides.now });
-  const requests = createRequests({ db, settings, game, tg, config, access, referrals, autoPromo });
+  const requests = createRequests({ db, settings, game, tg, config, access, referrals, autoPromo, invites });
   const crash = createCrash({ db, settings, game, rng: overrides.rng, now: overrides.now });
   const dice = createDice({ db, settings, game, rng: overrides.rng });
 
   let botPart = null;
   if (config.botToken && config.botMode !== 'off') {
-    botPart = createBot({ config, db, settings, game, users, live, paths, requests });
+    botPart = createBot({ config, db, settings, game, users, live, paths, requests, invites });
     holder.bot = botPart.bot;
   }
 
@@ -103,12 +105,12 @@ export async function createServer(env = process.env, overrides = {}) {
 
   if (botPart) app.post(config.webhookPath, express.json({ limit: '1mb' }), botPart.webhookHandler);
 
-  const { router, auth } = createApi({ config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo });
+  const { router, auth } = createApi({ config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites });
   app.use(
     '/api/admin',
     express.json({ limit: '1mb' }),
     auth,
-    createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, broadcaster: botPart ? botPart.broadcaster : noBroadcaster }),
+    createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, broadcaster: botPart ? botPart.broadcaster : noBroadcaster }),
   );
   app.use('/api', express.json({ limit: '64kb' }), router);
   app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
