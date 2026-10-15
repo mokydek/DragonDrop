@@ -68,7 +68,7 @@ export async function createServer(env = process.env, overrides = {}) {
   await marketPricesOnce(db, settings).catch((e) => console.warn('[db] market prices:', e.message));
 
   const holder = { bot: null, game: null };
-  const tg = overrides.tg || createTg(() => holder.bot, config);
+  const tg = overrides.tg || createTg(() => holder.bot, config, paths);
   const live = createLive({
     db,
     getPublicItem: (id) => holder.game.publicItem(holder.game.catalog.items.get(id)),

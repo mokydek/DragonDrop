@@ -34,6 +34,8 @@ export async function startMockTelegram() {
   const state = {
     calls: [],
     members: new Set(), // user ids subscribed to the channel
+    memberErrors: new Map(), // user id -> the error getChatMember gives for them (e.g. 'Bad Request: PARTICIPANT_ID_INVALID')
+    channelError: '', // getChatMember fails for everyone (e.g. the bot is not an admin of the channel)
     users: new Map(), // user id -> { first_name, last_name, username } as getChat returns them now (absent: no chat with the bot)
     botIsAdmin: true,
     webhookUrl: '',
@@ -88,6 +90,8 @@ export async function startMockTelegram() {
       case 'getChatMember': {
         const uid = Number(p.user_id);
         if (uid === me.id) return { status: state.botIsAdmin ? 'administrator' : 'member', user: me };
+        const err = state.channelError || state.memberErrors.get(uid);
+        if (err) return { __error: { error_code: 400, description: err } };
         return { status: state.members.has(uid) ? 'member' : 'left', user: { id: uid, is_bot: false, first_name: 'U' } };
       }
       case 'getChat': {
