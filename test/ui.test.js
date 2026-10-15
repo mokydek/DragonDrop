@@ -582,6 +582,49 @@ test('case strip: before an opening the brainrots drift round after round; the s
   await calm.context().close();
 });
 
+test('case strips: a long name never makes a brainrot wider; every strip, x5 too, stops with its winner under the marker', { skip }, async () => {
+  // a case of long names, so the strips are full of them
+  const item = (n) => [...demo.ctx.game.catalog.items.values()].find((i) => i.name === n);
+  const made = await demo.app.post('/api/admin/cases', {
+    user: ME,
+    body: {
+      name_ru: 'Длинные имена', name_uk: 'Довгі імена', name_en: 'Long names', price: 1, emoji: '📦', color: '#f59e0b', sort: 999, enabled: true,
+      items: [{ itemId: item('Gorillo Watermelondrillo').id, chance: 40 }, { itemId: item('Trenostruzzo Turbo 3000').id, chance: 30 }, { itemId: item('Tim Cheese').id, chance: 30 }],
+    },
+  });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const id = made.body.case.id;
+  await demo.app.setBalance(ME.id, 1000);
+  const { page, errors } = await open({ path: `/#/case/${id}` });
+  await page.waitForSelector('#countSeg');
+  for (const n of [5, 1]) {
+    await page.click(`[data-act="count"][data-n="${n}"]`);
+    for (let k = 0; k < 2; k++) {
+      await page.click('[data-act="open"]');
+      await page.waitForSelector('.result', { timeout: 15000 });
+      const strips = await page.evaluate(() =>
+        [...document.querySelectorAll('#roulettes .roulette')].map((box) => {
+          const b = box.getBoundingClientRect();
+          const w = box.querySelector('.r-tile.win').getBoundingClientRect();
+          return { sizes: [...new Set([...box.querySelectorAll('.r-tile')].map((t) => t.offsetWidth))], off: w.left + w.width / 2 - (b.left + b.width / 2), half: w.width / 2 };
+        }),
+      );
+      assert.equal(strips.length, n);
+      for (const s of strips) {
+        assert.equal(s.sizes.length, 1, `every brainrot of the strip is one size: ${s.sizes}`);
+        assert.ok(Math.abs(s.off) < s.half - 8, `the winner is under the marker: ${s.off.toFixed(1)} px from it`);
+      }
+      await page.click('.result [data-act="close-modal"]');
+      await page.waitForSelector('.modal-wrap', { state: 'detached' });
+    }
+  }
+  assert.deepEqual(errors, []);
+  await page.context().close();
+  await demo.ctx.db.query('DELETE FROM bs_inventory WHERE user_id = $1 AND case_id = $2', [ME.id, id]);
+  assert.equal((await demo.app.del(`/api/admin/cases/${id}`, { user: ME })).status, 200);
+  await demo.app.setBalance(ME.id, 1250);
+});
+
 test('fast spin: a switch under Open and Upgrade; the case strip and the upgrader pointer stop in about a second; remembered', { skip }, async () => {
   const { page, errors } = await open({ path: `/#/case/${demo.bySlug.noob.id}` });
   await page.waitForSelector('#openRow [data-act="open"]');
