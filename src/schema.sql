@@ -279,6 +279,15 @@ ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS promo_id BIGINT;
 ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS promo_code TEXT;
 ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS promo_pct SMALLINT;
 ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS promo_bonus BIGINT NOT NULL DEFAULT 0;
+-- the queue of brainrot deposits: an admin accepts the next one, the player then has 5 minutes to send
+-- the trade to the admin's Roblox nick (kept with the request); the player may cancel their own request
+ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
+ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS accepted_by BIGINT;
+ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS trade_nick TEXT;
+ALTER TABLE bs_requests ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS bs_requests_queue_idx ON bs_requests (id) WHERE kind = 'deposit' AND method = 'brainrot' AND status = 'new';
+-- admins: their Roblox nick, the one players send the deposit trade to
+ALTER TABLE bs_users ADD COLUMN IF NOT EXISTS trade_nick TEXT;
 
 -- Conversation between admins and the player about a request (delivered through the bot).
 CREATE TABLE IF NOT EXISTS bs_request_msgs (

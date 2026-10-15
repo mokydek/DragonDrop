@@ -1,4 +1,4 @@
-import { tg, html, raw, render, $, $$, sleep, store, haptic, coin, chest, itemArt, initials, countdown, rgba } from './util.js';
+import { tg, html, raw, render, $, $$, sleep, store, haptic, coin, chest, itemArt, initials, countdown, rgba, mmss, tickTimers } from './util.js';
 import { t, setLang, lang, fmt, fmtDate, fmtDateTime, LANGS } from './i18n.js';
 import * as API from './api.js';
 import { startBubbles, setBubbleTint, setSkyMode } from './bubbles.js';
@@ -54,6 +54,8 @@ const S = {
   dice: { minBet: 5, maxBet: 100000, colors: ['red', 'yellow', 'green', 'blue', 'purple', 'orange'], pays: [0, 2, 0, 4] }, // colour dice
   autoPromo: null, // the auto promo code of these hours: { code, pct, endsAt, hours, used } (null: none)
   tuCode: '', // code put in the top-up form when it opens (the auto promo code from its card)
+  queue: null, // the brainrot deposit in the queue or being handled: { id, state, position, eta, tradeNick, tradeLeft, details, canCancel }
+  openQueue: false, // opened from the bot's "your turn" button: show the queue card
   free: null,
   feed: [],
   top24: null,
@@ -2068,6 +2070,9 @@ async function refreshMe() {
     S.nick = { ...S.nick, ...r.nick };
     S.share = { ...S.share, ...r.share };
     if (r.topup) S.topup = r.topup;
+    // the request closed meanwhile: its own state says how (done / declined)
+    if (S.queue && !r.queue) queuePoll(0);
+    else if (r.queue !== undefined) onQueue(r.queue);
     // a part closed or opened again by the main admin: the screen shows it at once
     if (r.modes && JSON.stringify({ ...S.modes, ...r.modes }) !== JSON.stringify(S.modes)) {
       S.modes = { ...S.modes, ...r.modes };
@@ -2183,9 +2188,11 @@ function topupMenu() {
       ${S.topup.starsOpen === false
         ? html`<button type="button" class="tu-opt stars closed" data-act="tu-stars" disabled><span class="tu-ico emo">⭐</span><b>${t('tu.stars')}</b><small>${t('tu.closed')}</small></button>`
         : html`<button type="button" class="tu-opt stars" data-act="tu-stars"><span class="tu-ico emo">⭐</span><b>${t('tu.stars')}</b></button>`}
-      ${S.topup.brainrotsOpen === false
-        ? html`<button type="button" class="tu-opt brainrots closed" data-act="tu-brainrots" disabled><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b><small>${t('tu.closed')}</small></button>`
-        : html`<button type="button" class="tu-opt brainrots" data-act="tu-brainrots"><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b></button>`}
+      ${qIsOpen()
+        ? html`<button type="button" class="tu-opt brainrots" data-act="tu-brainrots"><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b><small class="tu-q">${qHint(S.queue)}</small></button>`
+        : S.topup.brainrotsOpen === false
+          ? html`<button type="button" class="tu-opt brainrots closed" data-act="tu-brainrots" disabled><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b><small>${t('tu.closed')}</small></button>`
+          : html`<button type="button" class="tu-opt brainrots" data-act="tu-brainrots"><span class="tu-ico emo">🧠</span><b>${t('tu.brainrots')}</b></button>`}
     </div>
     <button type="button" class="btn ghost tu-promo" data-act="promo">${t('promo')}</button>`,
   );
@@ -2421,12 +2428,17 @@ function topupBrainrots() {
       S.me.nick = r.request.nick;
       if (r.ref) S.me.ref = r.ref;
       if (r.request.promo && S.autoPromo && S.autoPromo.code === r.request.promo.code) S.autoPromo.used = true;
-      closeModal();
       haptic.notify('success');
       toast(t('reqSent', { id: r.request.id }), 'ok');
+      // in the queue: the card with the place and the time until the turn
+      applyQueue(r.queue);
+      if (S.queue) topupQueue({ poll: 5000 });
+      else closeModal();
     } catch (err) {
       btn.disabled = false;
       showError(err);
+      // a request of theirs is in the queue already: its card
+      if (err.code === 'deposit_open') return showQueueNow();
       // closed by the admins while the form was open: back to the choice, marked closed
       if (err.code === 'deposits_closed') {
         S.topup = { ...S.topup, brainrotsOpen: false };
@@ -2434,6 +2446,165 @@ function topupBrainrots() {
       }
     }
   });
+}
+
+// ------------------------------------------------------------------ the deposit queue
+// A brainrot deposit waits in a queue; an admin accepts the next one and the player then has 5 minutes
+// to send the trade to the admin's Roblox nick. The card shows the place and the time until the turn
+// (it gets shorter, never longer, while the place stays the same), then the nick and the 5 minutes.
+const Q_OPEN = ['queue', 'trade', 'work'];
+const Q = { id: 0, pos: 0, until: 0, tradeUntil: 0, timer: 0 }; // deadlines on this device's clock (ms)
+const qIsOpen = () => !!(S.queue && Q_OPEN.includes(S.queue.state));
+const qShown = () => !!tuBox()?.querySelector('#qBox');
+const qHint = (q) => (q.state === 'trade' ? t('tu.yourTurn') : q.state === 'queue' ? t('tu.inQueue', { n: q.position }) : t('tu.inWork'));
+
+/** A queue state from the server: kept while the request is open, with its deadlines. */
+function applyQueue(q) {
+  if (!q || !Q_OPEN.includes(q.state)) {
+    S.queue = null;
+    return;
+  }
+  const now = Date.now();
+  const same = Q.id === q.id;
+  if (q.state === 'queue') {
+    const until = now + q.eta * 1000;
+    Q.until = same && Q.pos === q.position && Q.until ? Math.min(Q.until, until) : until;
+    Q.pos = q.position;
+  }
+  if (q.tradeLeft !== undefined) {
+    const until = now + q.tradeLeft * 1000;
+    Q.tradeUntil = same && Q.tradeUntil ? Math.min(Q.tradeUntil, until) : until;
+  }
+  Q.id = q.id;
+  S.queue = q;
+}
+
+function queueCard(q) {
+  const items = q.details ? html`<div class="q-items">${t('q.items', { list: q.details })}</div>` : '';
+  const cancel = q.canCancel ? html`<button type="button" class="btn big q-cancel" data-act="q-cancel">${t('q.cancel')}</button>` : '';
+  if (q.state === 'trade') {
+    const left = (Q.tradeUntil - Date.now()) / 1000;
+    return html`<div class="q-card trade">
+      <span class="q-pill">${t('q.pillTrade')}</span>
+      <div class="q-title">${t('q.sendTo')}</div>
+      <button type="button" class="q-nick" data-act="q-copy">${q.tradeNick}</button>
+      <b class="q-timer${left > 0 ? '' : ' over'}" data-until="${Q.tradeUntil}" data-over="${t('q.timeUp')}">${left > 0 ? mmss(left) : t('q.timeUp')}</b>
+      <p class="q-note">${t('q.tradeNote')}</p>
+      ${items}${cancel}
+    </div>`;
+  }
+  if (q.state === 'work') {
+    return html`<div class="q-card">
+      <span class="q-pill">${t('q.pillWork')}</span>
+      <p class="q-note">${t('q.workNote')}</p>
+      ${items}${cancel}
+    </div>`;
+  }
+  const left = (Q.until - Date.now()) / 1000;
+  return html`<div class="q-card">
+    <span class="q-pill">${t('q.pill', { n: q.position })}</span>
+    <div class="q-title">${left > 0 ? t('q.until') : t(q.position === 1 ? 'q.next' : 'q.soon')}</div>
+    ${left > 0 ? html`<b class="q-timer" data-until="${Q.until}" data-zero>${mmss(left)}</b>` : ''}
+    <p class="q-note">${t('q.note')}</p>
+    ${items}${cancel}
+  </div>`;
+}
+
+/** The queue card in the top-up sheet; `poll`: when to ask the server next (0: now). */
+function topupQueue({ poll = 0 } = {}) {
+  const box = tuBox();
+  if (!box || !S.queue) return;
+  box.closest('.sheet')?.classList.remove('tall');
+  render(box, html`${tuHead(t('tu.brainrots'))}<div id="qBox">${queueCard(S.queue)}</div>`);
+  // the time until the turn is up: "you're next"
+  box.querySelector('#qBox').addEventListener('zero', drawQueue);
+  queuePoll(poll);
+}
+function drawQueue() {
+  const el = tuBox()?.querySelector('#qBox');
+  if (el && S.queue) render(el, queueCard(S.queue));
+}
+
+/** Asks the server about the open request: every 5 s while its card is open, every 15 s otherwise. */
+function queuePoll(delay) {
+  clearTimeout(Q.timer);
+  if (!qIsOpen()) return;
+  Q.timer = setTimeout(async () => {
+    const id = S.queue && S.queue.id;
+    if (!id) return;
+    try {
+      onQueue((await API.get('/requests/queue?id=' + id)).queue);
+    } catch {
+      /* try again */
+    }
+    queuePoll(qShown() ? 5000 : 15000);
+  }, delay);
+}
+
+/** A fresh state: the card follows; the turn comes → the card opens; done / declined → said so. */
+function onQueue(q) {
+  const before = S.queue;
+  applyQueue(q);
+  const menu = !!tuBox()?.querySelector('.tu-opts'); // the top-up choice is open: its line follows
+  if (!S.queue) {
+    if (before && q && q.id === before.id) {
+      if (q.state === 'done') {
+        haptic.notify('success');
+        toast(t('q.done', { id: q.id }), 'ok');
+        refreshMe(); // the coins credited
+        refreshInventory(); // brainrots given
+      } else if (q.state === 'rejected') toast(t('q.rejected', { id: q.id }), 'error');
+    }
+    if (before && (qShown() || menu)) topupMenu();
+    return;
+  }
+  if (!before) queuePoll(15000); // sent from another device
+  if (S.queue.state === 'trade' && (!before || before.state !== 'trade')) {
+    haptic.notify('warning');
+    // nothing else on the screen: the card opens by itself
+    if (!qShown() && !$('#modal-root .modal-wrap') && !S.busy) {
+      openTopup();
+      topupQueue({ poll: 5000 });
+      return;
+    }
+  }
+  if (qShown()) drawQueue();
+  else if (menu) topupMenu();
+}
+
+/** Opens the card of the request in the queue (asked for it again). */
+async function showQueueNow() {
+  try {
+    applyQueue((await API.get('/requests/queue')).queue);
+  } catch {
+    return;
+  }
+  if (S.queue) topupQueue({ poll: 5000 });
+}
+
+async function cancelQueue() {
+  const q = S.queue;
+  if (!q || !q.canCancel) return;
+  haptic.tick();
+  if (!(await confirmModal(t('q.cancelAsk', { id: q.id })))) {
+    openTopup(); // changed their mind: back to the card
+    return topupQueue();
+  }
+  try {
+    const r = await API.post(`/requests/${q.id}/cancel`);
+    applyQueue(r.queue);
+    haptic.notify('success');
+    toast(t('q.cancelled', { id: q.id }), 'ok');
+    if (S.autoPromo) refreshAutoPromo(); // the promo code sent with it can be used again
+  } catch (e) {
+    showError(e);
+    // e.g. an admin credited it meanwhile: the card as it is now
+    applyQueue((await API.get('/requests/queue?id=' + q.id).catch(() => ({ queue: q }))).queue);
+    if (S.queue) {
+      openTopup();
+      topupQueue({ poll: 5000 });
+    }
+  }
 }
 
 function openWithdraw() {
@@ -2588,6 +2759,7 @@ function adminCtx() {
     confirmModal,
     go,
     fmtChance,
+    mmss,
     buffTiers,
     buffChip,
     buffPct,
@@ -2625,7 +2797,19 @@ const actions = {
   },
   'tu-menu': () => topupMenu(),
   'tu-stars': () => topupStars(),
-  'tu-brainrots': () => topupBrainrots(),
+  'tu-brainrots': () => (qIsOpen() ? topupQueue() : topupBrainrots()),
+  'q-copy': async () => {
+    const nick = S.queue && S.queue.tradeNick;
+    if (!nick) return;
+    haptic.tick();
+    try {
+      await navigator.clipboard.writeText(nick);
+      toast(t('copied'), 'ok');
+    } catch {
+      /* no clipboard: the nick is on the screen */
+    }
+  },
+  'q-cancel': () => cancelQueue(),
   withdraw: () => openWithdraw(),
   lang: (el) => openLang(el),
   theme: (el) => openTheme(el),
@@ -2889,7 +3073,9 @@ function openFromLink() {
     const go = u.searchParams.get('go');
     if (go === null) return;
     u.searchParams.delete('go');
-    const hash = /^[a-z0-9/_-]{1,80}$/i.test(go) ? '#/' + go : u.hash;
+    // the bot's "your turn" button: the queue card over the cases
+    if (go === 'queue') S.openQueue = true;
+    const hash = go === 'queue' ? '#/cases' : /^[a-z0-9/_-]{1,80}$/i.test(go) ? '#/' + go : u.hash;
     history.replaceState(null, '', u.pathname + u.search + hash);
   } catch {
     /* ignore malformed URLs */
@@ -2950,6 +3136,7 @@ function applyBootstrap(b) {
   S.links = b.links || {};
   S.partner = !!b.partner;
   if (b.topup) S.topup = b.topup;
+  applyQueue(b.queue);
   if (b.modes) S.modes = { ...S.modes, ...b.modes };
   if (b.me.lang && b.me.lang !== lang() && !store.getItem('bs_lang')) setLang(b.me.lang);
   if (b.me.theme && !store.getItem('bs_theme')) applyTheme(b.me.theme);
@@ -3008,6 +3195,16 @@ async function boot() {
   openFromLink();
   shell();
   renderView();
+  setInterval(tickTimers, 1000); // the queue and trade timers
+  if (S.queue) {
+    queuePoll(15000);
+    // the player's turn (or the bot's button): the card with the nick and the 5 minutes
+    if (S.openQueue || (S.queue.state === 'trade' && Q.tradeUntil > Date.now())) {
+      openTopup();
+      topupQueue();
+    }
+  }
+  S.openQueue = false;
   const live = API.stream({
     drop: onDrop,
     online: (n) => {

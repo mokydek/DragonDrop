@@ -138,6 +138,31 @@ export function initials(name) {
   return (s[0] || '?').toUpperCase();
 }
 
+/** mm:ss of a number of seconds (the queue and trade timers) */
+export function mmss(sec) {
+  const s = Math.max(0, Math.ceil(sec));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Live timers: every element with data-until (a Date.now() deadline, ms) shows mm:ss left, or its
+ * data-over text at 0 (class "over"); one with data-zero gets a bubbling "zero" event once at 0.
+ */
+export function tickTimers(root = document) {
+  const now = Date.now();
+  for (const el of root.querySelectorAll('[data-until]')) {
+    const left = (Number(el.dataset.until) - now) / 1000;
+    const over = left <= 0;
+    const txt = over ? el.dataset.over || '00:00' : mmss(left);
+    if (el.textContent !== txt) el.textContent = txt;
+    el.classList.toggle('over', over);
+    if (over && el.dataset.zero !== undefined && !el.dataset.fired) {
+      el.dataset.fired = '1';
+      el.dispatchEvent(new CustomEvent('zero', { bubbles: true }));
+    }
+  }
+}
+
 /** hh:mm:ss until a date */
 export function countdown(iso) {
   const ms = Math.max(0, new Date(iso).getTime() - Date.now());

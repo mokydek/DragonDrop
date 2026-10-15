@@ -190,8 +190,9 @@ test('deposit request: saved, player gets a confirmation to answer, admins get a
   const conf = lastSent(player.id);
   assert.equal(
     conf.text,
-    `📥 Заявка на пополнение #${depId} принята.\n\nНик в Roblox: RobloxAlice\nЧто пополняешь: Tralalero Tralala x2\n\nАдминистратор свяжется с тобой в этом чате.`,
+    `📥 Заявка на пополнение #${depId} — ты в очереди: №1.\n\nНик в Roblox: RobloxAlice\nЧто пополняешь: Tralalero Tralala x2\n\nКогда подойдёт твоя очередь, бот напишет сюда — у тебя будет 5 минут, чтобы отправить трейд.`,
   );
+  assert.deepEqual(r.body.queue, { id: depId, state: 'queue', nick: 'RobloxAlice', details: 'Tralalero Tralala x2', coins: 0, canCancel: true, position: 1, eta: 0 });
   assert.deepEqual(conf.reply_markup.inline_keyboard, [[{ text: '✍️ Написать', callback_data: `rq:${depId}` }]]);
 
   const note = lastSent(admin.id);
@@ -223,7 +224,8 @@ test('conversation: admin writes, the bot delivers it, the player answers in the
   const r = await app.post(`/api/admin/requests/${depId}/messages`, { user: admin, body: { text: 'Привет! Добавь в друзья BossRoblox' } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.delivered, true);
-  assert.equal(r.body.request.status, 'active');
+  assert.equal(r.body.request.status, 'new', 'a message keeps the deposit in the queue');
+  assert.equal(r.body.request.queuePos, 1);
   assert.equal(r.body.request.waiting, false);
   const toPlayer = lastSent(player.id);
   assert.equal(toPlayer.text, `💬 Администратор по заявке #${depId}:\n\nПривет! Добавь в друзья BossRoblox`);
@@ -428,15 +430,23 @@ test('withdraw: only the listed brainrots; others are exchanged for one of them,
   await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE user_id = $1 AND status IN ('new', 'active')", [other.id]);
 });
 
-test('a player can have at most 5 open requests', async () => {
+test('a player can have at most 5 open requests, one of them a brainrot deposit (one place in the queue)', async () => {
   const u = users.carol;
-  for (let i = 0; i < 5; i++) {
-    const r = await app.post('/api/requests/deposit', { user: u, body: { nick: 'CarolR', details: `brainrot ${i}` } });
-    assert.equal(r.status, 200, JSON.stringify(r.body));
+  const dep = await app.post('/api/requests/deposit', { user: u, body: { nick: 'CarolR', details: 'brainrot 0' } });
+  assert.equal(dep.status, 200, JSON.stringify(dep.body));
+  const again = await app.post('/api/requests/deposit', { user: u, body: { nick: 'CarolR', details: 'brainrot 1' } });
+  assert.equal(again.status, 400);
+  assert.deepEqual(again.body, { error: 'deposit_open', id: dep.body.request.id }, 'the request sent before goes first');
+  const ids = await giveItems(u.id, ['Cerberus', 'Cerberus', 'Cerberus', 'Cerberus', 'Cerberus']);
+  for (let i = 0; i < 4; i++) {
     await wait(260); // stay under the action rate limit
+    const r = await app.post('/api/requests/withdraw', { user: u, body: { nick: 'CarolR', ids: [ids[i]] } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
   }
-  const r = await app.post('/api/requests/deposit', { user: u, body: { nick: 'CarolR', details: 'one more' } });
+  await freshWindow();
+  const r = await app.post('/api/requests/withdraw', { user: u, body: { nick: 'CarolR', ids: [ids[4]] } });
   assert.equal(r.body.error, 'too_many_requests');
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE user_id = $1 AND kind = 'withdraw'", [u.id]);
 });
 
 test('blocked bot: the admin sees the message was not delivered', async () => {
@@ -600,4 +610,155 @@ test('brainrot deposits: admins close them for a while; no new requests, Stars s
   const again = await app.post('/api/requests/deposit', { user: other, body: { nick: 'BobRBX', details: 'что-то' } });
   assert.equal(again.status, 200, JSON.stringify(again.body));
   assert.equal(await count(), n + 1);
+});
+
+// ------------------------------------------------------------------ the deposit queue
+const P = [3001, 3002, 3003].map((id, i) => ({ id, first_name: ['Аня', 'Боря', 'Вика'][i], username: `q${i}`, language_code: 'ru' }));
+
+test('deposit queue: places in order, the time until the turn, one request per player; the admin list follows the queue', async () => {
+  await freshWindow();
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE status IN ('new', 'active')"); // an empty queue
+  for (const u of P) {
+    await app.post('/api/bootstrap', { user: u });
+    await app.message(u, '/start');
+  }
+  app.tg.reset();
+  const reqs = [];
+  for (const [i, u] of P.entries()) {
+    const r = await app.post('/api/requests/deposit', { user: u, body: { nick: `Q${i}Roblox`, offer: [{ itemId: itemByName('Cerberus').id, count: i + 1 }] } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.queue.state, 'queue');
+    assert.equal(r.body.queue.position, i + 1);
+    assert.equal(r.body.queue.eta, i * 300, 'nobody is being served: 5 minutes for each one ahead');
+    assert.equal(lastSent(u.id).text.split('\n')[0], `📥 Заявка на пополнение #${r.body.request.id} — ты в очереди: №${i + 1}.`);
+    reqs.push(r.body.request.id);
+  }
+  // the app reads it on start and later
+  assert.deepEqual((await app.post('/api/bootstrap', { user: P[1] })).body.queue, {
+    id: reqs[1], state: 'queue', nick: 'Q1Roblox', details: 'Cerberus ×2', coins: 0, canCancel: true, position: 2, eta: 300,
+  });
+  assert.equal((await app.get('/api/me', { user: P[2] })).body.queue.position, 3);
+  assert.equal((await app.get(`/api/requests/queue?id=${reqs[0]}`, { user: P[0] })).body.queue.position, 1);
+  assert.equal((await app.get(`/api/requests/queue?id=${reqs[0]}`, { user: P[1] })).body.queue, null, "someone else's request: nothing");
+  assert.equal((await app.get('/api/requests/queue?id=abc', { user: P[1] })).status, 400);
+  assert.equal((await app.get('/api/requests/queue', { user: other })).body.queue, null, 'no deposit, no queue');
+  // the admin: the queue in its order with the places
+  const list = (await app.get('/api/admin/requests?kind=deposit', { user: admin })).body;
+  assert.deepEqual(list.requests.map((x) => [x.id, x.queuePos]), reqs.map((id, i) => [id, i + 1]));
+  assert.equal(list.tradeNick, null, 'no nick of the admin yet');
+});
+
+test('deposit queue: the admin accepts with their nick, the player gets 5 minutes and the nick, the others move up', async () => {
+  const [q1, q2, q3] = (await app.ctx.db.many("SELECT id FROM bs_requests WHERE kind = 'deposit' AND status = 'new' ORDER BY id")).map((r) => Number(r.id));
+  // the nick: needed first, checked, saved for the next time
+  assert.equal((await app.post(`/api/admin/requests/${q1}/accept`, { user: admin })).body.error, 'trade_nick_missing');
+  assert.equal((await app.put('/api/admin/trade-nick', { user: player, body: { nick: 'Hacker' } })).status, 403);
+  assert.equal((await app.put('/api/admin/trade-nick', { user: admin, body: { nick: 'ab' } })).body.error, 'bad_nick');
+  assert.deepEqual((await app.put('/api/admin/trade-nick', { user: admin, body: { nick: '@BossRoblox' } })).body, { tradeNick: 'BossRoblox' });
+  assert.equal((await app.get('/api/admin/requests?kind=deposit', { user: admin })).body.tradeNick, 'BossRoblox');
+  assert.equal((await app.get(`/api/admin/requests/${q1}`, { user: admin })).body.tradeNick, 'BossRoblox', 'the card has it too');
+
+  app.tg.reset();
+  const a = await app.post(`/api/admin/requests/${q1}/accept`, { user: admin });
+  assert.equal(a.status, 200, JSON.stringify(a.body));
+  assert.equal(a.body.delivered, true);
+  assert.equal(a.body.request.status, 'active');
+  assert.equal(a.body.request.tradeNick, 'BossRoblox');
+  assert.ok(a.body.request.tradeLeft >= 299 && a.body.request.tradeLeft <= 300, String(a.body.request.tradeLeft));
+  assert.equal(a.body.request.queuePos, null);
+  assert.equal(a.body.messages.at(-1).text, 'accept:BossRoblox');
+  const msg = lastSent(P[0].id);
+  assert.equal(msg.text, `🔔 Твоя очередь! Заявка #${q1}\n\nОтправь трейд в Steal a Brainrot на ник: BossRoblox\nЧто отправляешь: Cerberus\n\n⏱ На это 5 минут.`);
+  assert.deepEqual(msg.reply_markup.inline_keyboard, [
+    [{ text: '📲 Открыть', web_app: { url: 'https://app.dragondrop.test/?go=queue' } }],
+    [{ text: '✍️ Ответить', callback_data: `rq:${q1}` }],
+  ]);
+  // a Telegram reply to it reaches the request
+  const tgId = (await app.ctx.db.one("SELECT tg_msg_id FROM bs_request_msgs WHERE request_id = $1 AND text = 'accept:BossRoblox'", [q1])).tg_msg_id;
+  assert.ok(tgId);
+  assert.equal((await app.post(`/api/admin/requests/${q1}/accept`, { user: admin })).body.error, 'already_accepted');
+
+  // the player: their turn; the others: one place up, the running trade window first
+  const s1 = (await app.get('/api/requests/queue', { user: P[0] })).body.queue;
+  assert.equal(s1.state, 'trade');
+  assert.equal(s1.tradeNick, 'BossRoblox');
+  assert.ok(s1.tradeLeft >= 298 && s1.tradeLeft <= 300);
+  assert.ok(!('position' in s1));
+  const s2 = (await app.get('/api/requests/queue', { user: P[1] })).body.queue;
+  assert.equal(s2.position, 1);
+  assert.ok(s2.eta >= 298 && s2.eta <= 300, String(s2.eta));
+  const s3 = (await app.get('/api/requests/queue', { user: P[2] })).body.queue;
+  assert.equal(s3.position, 2);
+  assert.ok(s3.eta >= 598 && s3.eta <= 600, String(s3.eta));
+  // the window is over: it no longer holds up the queue; the player still sees the nick
+  await app.ctx.db.query("UPDATE bs_requests SET accepted_at = now() - interval '6 minutes' WHERE id = $1", [q1]);
+  assert.equal((await app.get('/api/requests/queue', { user: P[1] })).body.queue.eta, 0);
+  const late = (await app.get('/api/requests/queue', { user: P[0] })).body.queue;
+  assert.deepEqual([late.state, late.tradeLeft, late.tradeNick], ['trade', 0, 'BossRoblox']);
+  assert.equal((await app.get(`/api/admin/requests/${q1}`, { user: admin })).body.request.tradeLeft, 0);
+
+  // a message to someone waiting keeps them in the queue; in the list the accepted one comes first
+  await app.post(`/api/admin/requests/${q3}/messages`, { user: admin, body: { text: 'Скоро позовём' } });
+  const list = (await app.get('/api/admin/requests?kind=deposit', { user: admin })).body.requests;
+  assert.deepEqual(list.map((x) => [x.id, x.status, x.queuePos]), [[q1, 'active', null], [q2, 'new', 1], [q3, 'new', 2]]);
+  // a nick typed in when accepting is used and saved
+  const b = await app.post(`/api/admin/requests/${q2}/accept`, { user: admin, body: { nick: 'BossAlt' } });
+  assert.equal(b.body.request.tradeNick, 'BossAlt');
+  assert.equal((await app.ctx.db.one('SELECT trade_nick FROM bs_users WHERE id = $1', [admin.id])).trade_nick, 'BossAlt');
+  assert.equal((await app.post(`/api/admin/requests/${q3}/accept`, { user: admin, body: { nick: 'x' } })).body.error, 'bad_nick');
+  // only brainrot deposits
+  const wd = await app.ctx.db.one("INSERT INTO bs_requests (user_id, kind, nick) VALUES ($1, 'withdraw', 'W') RETURNING id", [P[2].id]);
+  assert.equal((await app.post(`/api/admin/requests/${wd.id}/accept`, { user: admin })).body.error, 'bad_request');
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE id = $1", [wd.id]);
+});
+
+test('deposit queue: the player cancels (waiting or called, until something is credited); the admin who called them is told', async () => {
+  const [q1, q2] = (await app.ctx.db.many("SELECT id FROM bs_requests WHERE kind = 'deposit' AND status = 'active' AND accepted_at IS NOT NULL ORDER BY id")).map((r) => Number(r.id));
+  const q3 = Number((await app.ctx.db.one("SELECT id FROM bs_requests WHERE kind = 'deposit' AND status = 'new' AND user_id = 3003")).id);
+  await freshWindow();
+  // someone else's or unknown: not found; garbage id: bad request
+  assert.equal((await app.post(`/api/requests/${q3}/cancel`, { user: P[0] })).status, 404);
+  assert.equal((await app.post('/api/requests/99999999/cancel', { user: P[0] })).status, 404);
+  assert.equal((await app.post('/api/requests/x/cancel', { user: P[0] })).status, 400);
+
+  // waiting: cancelled, nobody is bothered; the promo code sent with it can be used again
+  const promo = await app.ctx.db.one("INSERT INTO bs_auto_promos (code, pct, starts_at, ends_at) VALUES ('QTEST', 10, now() - interval '1 hour', now() + interval '1 hour') RETURNING id");
+  await app.ctx.db.query('INSERT INTO bs_auto_promo_uses (promo_id, user_id, request_id) VALUES ($1, $2, $3)', [promo.id, P[2].id, q3]);
+  await app.ctx.db.query("UPDATE bs_requests SET promo_id = $2, promo_code = 'QTEST', promo_pct = 10 WHERE id = $1", [q3, promo.id]);
+  app.tg.reset();
+  const c3 = await app.post(`/api/requests/${q3}/cancel`, { user: P[2] });
+  assert.equal(c3.status, 200, JSON.stringify(c3.body));
+  assert.equal(c3.body.queue.state, 'cancelled');
+  assert.equal(c3.body.queue.canCancel, false);
+  assert.equal(app.tg.calls('sendMessage').length, 0, 'nobody to tell');
+  assert.equal((await app.ctx.db.one('SELECT count(*)::int AS n FROM bs_auto_promo_uses WHERE promo_id = $1', [promo.id])).n, 0);
+  assert.equal((await app.post(`/api/requests/${q3}/cancel`, { user: P[2] })).body.error, 'request_closed');
+  assert.equal((await app.get('/api/requests/queue', { user: P[2] })).body.queue, null, 'nothing open any more');
+  // the admin: under "declined", marked cancelled, with the line in the conversation
+  const rej = (await app.get('/api/admin/requests?kind=deposit&scope=rejected', { user: admin })).body.requests.find((x) => x.id === q3);
+  assert.deepEqual([rej.status, rej.cancelled], ['rejected', true]);
+  assert.equal((await app.get(`/api/admin/requests/${q3}`, { user: admin })).body.messages.at(-1).text, 'status:cancelled');
+  // a new request can be sent now
+  const again = await app.post('/api/requests/deposit', { user: P[2], body: { nick: 'Q2Roblox', details: 'Cerberus' } });
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.queue.position, 1);
+
+  // called: the admin who accepted it is told
+  app.tg.reset();
+  const c1 = await app.post(`/api/requests/${q1}/cancel`, { user: P[0] });
+  assert.equal(c1.body.queue.state, 'cancelled');
+  const note = lastSent(admin.id);
+  assert.equal(note.text, `🚫 Игрок отменил заявку #${q1} — Аня (@q0) · id 3001`);
+  assert.equal(note.reply_markup.inline_keyboard[0][0].web_app.url, `https://app.dragondrop.test/?go=admin/deposits/${q1}`);
+  // something credited: too late to cancel
+  await app.post(`/api/admin/requests/${q2}/credit`, { user: admin, body: { amount: 30 } });
+  assert.equal((await app.get('/api/requests/queue', { user: P[1] })).body.queue.canCancel, false);
+  const c2 = await app.post(`/api/requests/${q2}/cancel`, { user: P[1] });
+  assert.equal(c2.status, 400);
+  assert.equal(c2.body.error, 'request_in_work');
+  // finished: the card shows how it ended
+  await app.post(`/api/admin/requests/${q2}/status`, { user: admin, body: { status: 'done' } });
+  const done = (await app.get(`/api/requests/queue?id=${q2}`, { user: P[1] })).body.queue;
+  assert.deepEqual([done.state, done.coins], ['done', 30]);
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE status IN ('new', 'active')");
 });

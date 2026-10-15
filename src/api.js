@@ -184,6 +184,7 @@ export function createApi(deps) {
         inventory: await game.inventory(u.id),
         bot: tg.botUsername || null,
         topup: topupState(),
+        queue: await requests.queueState(u.id), // the brainrot deposit in the queue (or being handled), if any
         modes: modes(),
         halloween: !!settings.get('halloween'),
         partner: await referrals.isPartner(u.id), // has a referral code of their own (the "Referrals" screen)
@@ -226,6 +227,7 @@ export function createApi(deps) {
       share: game.shareState(req.user),
       partner: await referrals.isPartner(req.user.id),
       topup: topupState(),
+      queue: await requests.queueState(req.user.id),
       modes: modes(),
     })),
   );
@@ -399,6 +401,20 @@ export function createApi(deps) {
     }),
   );
   r.post('/requests/withdraw', auth, gate('withdrawals', 'withdrawals_closed'), limitActions, wrap(async (req) => requests.createWithdraw(req.user, req.body || {})));
+
+  // the deposit queue: the player's place and time (?id= a request of theirs, else the open one), cancel
+  const reqParam = (v) => {
+    const id = Number(v);
+    if (!Number.isSafeInteger(id) || id < 1) throw new GameError('bad_request');
+    return id;
+  };
+  r.get(
+    '/requests/queue',
+    auth,
+    limitLight,
+    wrap(async (req) => ({ queue: await requests.queueState(req.user.id, req.query.id === undefined ? null : reqParam(req.query.id)) })),
+  );
+  r.post('/requests/:id/cancel', auth, limitActions, wrap(async (req) => requests.cancel(req.user, reqParam(req.params.id))));
 
   return { router: r, auth };
 }

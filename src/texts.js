@@ -58,8 +58,14 @@ export const TEXTS = {
     btnWrite: '✍️ Написать',
     btnReply: '✍️ Ответить',
     btnOpenRequest: '📂 Открыть заявку',
-    depositCreated: (id, nick, details) =>
-      `📥 Заявка на пополнение #${id} принята.\n\nНик в Roblox: ${nick}\nЧто пополняешь: ${details}\n\nАдминистратор свяжется с тобой в этом чате.`,
+    // pos: the place in the deposit queue (none: an admin took the request already)
+    depositCreated: (id, nick, details, pos) =>
+      (pos ? `📥 Заявка на пополнение #${id} — ты в очереди: №${pos}.` : `📥 Заявка на пополнение #${id} принята.`) +
+      `\n\nНик в Roblox: ${nick}\nЧто пополняешь: ${details}\n\n` +
+      (pos ? 'Когда подойдёт твоя очередь, бот напишет сюда — у тебя будет 5 минут, чтобы отправить трейд.' : 'Администратор свяжется с тобой в этом чате.'),
+    depositAccepted: (id, nick, details) =>
+      `🔔 Твоя очередь! Заявка #${id}\n\nОтправь трейд в Steal a Brainrot на ник: ${nick}` + (details ? `\nЧто отправляешь: ${details}` : '') + '\n\n⏱ На это 5 минут.',
+    btnOpenQueue: '📲 Открыть',
     withdrawCreated: (id, nick, items, total, rest) =>
       `📤 Заявка на вывод #${id} принята.\n\nНик в Roblox: ${nick}\nБрейнроты: ${items}\nНа сумму: ${fmt(total, 'ru')} 🪙` +
       (rest ? `\nОстаток на баланс: +${fmt(rest, 'ru')} 🪙` : '') +
@@ -82,6 +88,7 @@ export const TEXTS = {
     aNewDeposit: (id, who, nick, details) => `🆕 Пополнение #${id}\n\n👤 ${who}\n🎮 Ник: ${nick}\n📝 ${details}`,
     aNewWithdraw: (id, who, nick, items, total) => `🆕 Вывод #${id}\n\n👤 ${who}\n🎮 Ник: ${nick}\n🧠 ${items}\n💰 ${fmt(total, 'ru')} 🪙`,
     aUserReply: (id, who, text) => `💬 Заявка #${id} — ${who}:\n\n${text}`,
+    aCancelled: (id, who) => `🚫 Игрок отменил заявку #${id} — ${who}`,
   },
   uk: {
     welcome:
@@ -128,8 +135,13 @@ export const TEXTS = {
     btnWrite: '✍️ Написати',
     btnReply: '✍️ Відповісти',
     btnOpenRequest: '📂 Відкрити заявку',
-    depositCreated: (id, nick, details) =>
-      `📥 Заявку на поповнення #${id} прийнято.\n\nНік у Roblox: ${nick}\nЩо поповнюєш: ${details}\n\nАдміністратор зв'яжеться з тобою в цьому чаті.`,
+    depositCreated: (id, nick, details, pos) =>
+      (pos ? `📥 Заявка на поповнення #${id} — ти в черзі: №${pos}.` : `📥 Заявку на поповнення #${id} прийнято.`) +
+      `\n\nНік у Roblox: ${nick}\nЩо поповнюєш: ${details}\n\n` +
+      (pos ? 'Коли настане твоя черга, бот напише сюди — у тебе буде 5 хвилин, щоб надіслати трейд.' : "Адміністратор зв'яжеться з тобою в цьому чаті."),
+    depositAccepted: (id, nick, details) =>
+      `🔔 Твоя черга! Заявка #${id}\n\nНадішли трейд у Steal a Brainrot на нік: ${nick}` + (details ? `\nЩо надсилаєш: ${details}` : '') + '\n\n⏱ На це 5 хвилин.',
+    btnOpenQueue: '📲 Відкрити',
     withdrawCreated: (id, nick, items, total, rest) =>
       `📤 Заявку на виведення #${id} прийнято.\n\nНік у Roblox: ${nick}\nБрейнроти: ${items}\nНа суму: ${fmt(total, 'uk')} 🪙` +
       (rest ? `\nЗалишок на баланс: +${fmt(rest, 'uk')} 🪙` : '') +
@@ -152,6 +164,7 @@ export const TEXTS = {
     aNewDeposit: (id, who, nick, details) => `🆕 Поповнення #${id}\n\n👤 ${who}\n🎮 Нік: ${nick}\n📝 ${details}`,
     aNewWithdraw: (id, who, nick, items, total) => `🆕 Виведення #${id}\n\n👤 ${who}\n🎮 Нік: ${nick}\n🧠 ${items}\n💰 ${fmt(total, 'uk')} 🪙`,
     aUserReply: (id, who, text) => `💬 Заявка #${id} — ${who}:\n\n${text}`,
+    aCancelled: (id, who) => `🚫 Гравець скасував заявку #${id} — ${who}`,
   },
   en: {
     welcome:
@@ -198,8 +211,13 @@ export const TEXTS = {
     btnWrite: '✍️ Write',
     btnReply: '✍️ Reply',
     btnOpenRequest: '📂 Open request',
-    depositCreated: (id, nick, details) =>
-      `📥 Deposit request #${id} received.\n\nRoblox nickname: ${nick}\nWhat you deposit: ${details}\n\nAn admin will contact you in this chat.`,
+    depositCreated: (id, nick, details, pos) =>
+      (pos ? `📥 Deposit request #${id} — you're #${pos} in the queue.` : `📥 Deposit request #${id} received.`) +
+      `\n\nRoblox nickname: ${nick}\nWhat you deposit: ${details}\n\n` +
+      (pos ? "When it's your turn, the bot will message you here — you'll have 5 minutes to send the trade." : 'An admin will contact you in this chat.'),
+    depositAccepted: (id, nick, details) =>
+      `🔔 It's your turn! Request #${id}\n\nSend the trade in Steal a Brainrot to: ${nick}` + (details ? `\nWhat you send: ${details}` : '') + '\n\n⏱ You have 5 minutes.',
+    btnOpenQueue: '📲 Open',
     withdrawCreated: (id, nick, items, total, rest) =>
       `📤 Withdrawal request #${id} received.\n\nRoblox nickname: ${nick}\nBrainrots: ${items}\nTotal: ${fmt(total, 'en')} 🪙` +
       (rest ? `\nRemainder to balance: +${fmt(rest, 'en')} 🪙` : '') +
@@ -222,6 +240,7 @@ export const TEXTS = {
     aNewDeposit: (id, who, nick, details) => `🆕 Deposit #${id}\n\n👤 ${who}\n🎮 Nickname: ${nick}\n📝 ${details}`,
     aNewWithdraw: (id, who, nick, items, total) => `🆕 Withdrawal #${id}\n\n👤 ${who}\n🎮 Nickname: ${nick}\n🧠 ${items}\n💰 ${fmt(total, 'en')} 🪙`,
     aUserReply: (id, who, text) => `💬 Request #${id} — ${who}:\n\n${text}`,
+    aCancelled: (id, who) => `🚫 The player cancelled request #${id} — ${who}`,
   },
 };
 

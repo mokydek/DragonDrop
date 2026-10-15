@@ -1631,6 +1631,18 @@ test('deposit by brainrots: nickname + brainrots picked from the list, request r
   );
   assert.equal(req.details, 'Tralalero Tralala ×3, Cerberus');
   assert.equal(await page.textContent('.toast.ok'), `Заявка #${req.id} отправлена`);
+  // the sheet shows the place in the queue and what was sent; the request is cancelled from there
+  await page.waitForSelector('.q-card');
+  const pos = (await demo.app.get('/api/requests/queue', { user: ME })).body.queue.position;
+  assert.equal(await page.textContent('.q-pill'), `Очередь · №${pos}`);
+  assert.equal(await page.textContent('.q-items'), 'Брейнроты: Tralalero Tralala ×3, Cerberus');
+  await page.click('.q-cancel');
+  assert.equal(await page.textContent('.confirm p'), `Отменить заявку #${req.id}? Место в очереди пропадёт.`);
+  await page.click('#confirmYes');
+  await page.waitForSelector(`.toast.ok:has-text("Заявка #${req.id} отменена")`);
+  const after = await demo.ctx.db.one('SELECT status, cancelled_at FROM bs_requests WHERE id = $1', [req.id]);
+  assert.equal(after.status, 'rejected');
+  assert.ok(after.cancelled_at);
   await page.waitForSelector('.modal-wrap', { state: 'detached' });
   // the nickname is remembered
   await page.click('[data-act="topup"]');
@@ -1646,6 +1658,86 @@ test('deposit by brainrots: nickname + brainrots picked from the list, request r
   assert.equal(num(await page.textContent('.req .kv:has-text("На сумму") b')), sum);
   assert.deepEqual(errors, []);
   await page.context().close();
+});
+
+test('deposit queue: the player waits with a timer, the admin types their nick and accepts, the card shows the nick and 5 minutes; done closes it', { skip }, async () => {
+  const P = { id: 7301, first_name: 'Очередь', username: 'queue_ui', language_code: 'ru' };
+  await demo.app.post('/api/bootstrap', { user: P });
+  await demo.app.message(P, '/start');
+  const items = [...demo.ctx.game.catalog.items.values()];
+  const offer = [{ itemId: items.find((i) => i.name === 'Cerberus').id, count: 2 }];
+  const dep = await demo.app.post('/api/requests/deposit', { user: P, body: { nick: 'QueueRBX', offer } });
+  assert.equal(dep.status, 200, JSON.stringify(dep.body));
+  const id = dep.body.request.id;
+  const pos = dep.body.queue.position;
+  assert.ok(pos >= 2, 'others are waiting ahead');
+  await demo.ctx.db.query('UPDATE bs_users SET trade_nick = NULL WHERE id = $1', [ME.id]);
+
+  // the player: the top-up choice says the place, the card has the timer until the turn
+  const pl = await open({ user: P });
+  await pl.page.waitForSelector('.case-grid');
+  await pl.page.click('[data-act="topup"]');
+  await pl.page.waitForSelector('.tu-q');
+  assert.equal(await pl.page.textContent('.tu-q'), `В очереди · №${pos}`);
+  await pl.page.click('[data-act="tu-brainrots"]');
+  await pl.page.waitForSelector('.q-card');
+  assert.equal(await pl.page.textContent('.q-pill'), `Очередь · №${pos}`);
+  assert.equal(await pl.page.textContent('.q-title'), 'До твоей очереди');
+  assert.match(await pl.page.textContent('.q-timer'), /^\d\d:\d\d$/);
+  const t0 = await pl.page.textContent('.q-timer');
+  await pl.page.waitForFunction((t) => document.querySelector('.q-timer').textContent !== t, t0, { timeout: 3000 });
+  assert.match(await pl.page.textContent('.q-note'), /^Когда таймер дойдёт до нуля, у тебя будет 5 минут, чтобы отправить трейд/);
+  assert.equal(await pl.page.textContent('.q-items'), 'Брейнроты: Cerberus ×2');
+
+  // the admin: no nick yet — typed in the card, then accepted
+  const ad = await open({ path: `/#/admin/deposits/${id}` });
+  await ad.page.waitForSelector('[data-ra="accept"]');
+  assert.match(await ad.page.textContent('.req .form-head .badge'), new RegExp(`^Новая · №${pos}$`));
+  await ad.page.click('[data-ra="accept"]');
+  await ad.page.waitForSelector('.toast.error');
+  assert.equal(await ad.page.textContent('.toast.error'), 'Сначала укажи свой ник в Roblox');
+  await ad.page.fill('#acceptNick', 'BossRBX');
+  demo.app.tg.reset();
+  await ad.page.click('[data-ra="accept"]');
+  await ad.page.waitForSelector('.req .q-left');
+  assert.equal(await ad.page.textContent('.req .kv:has-text("Трейд на ник") b'), 'BossRBX');
+  assert.match(await ad.page.textContent('.req .q-left'), /^0[45]:\d\d$/);
+  assert.ok((await ad.page.locator('#reqChat .msg.sys').allTextContents()).some((m) => m.startsWith('Принята · трейд на ник BossRBX')));
+  assert.equal(await ad.page.locator('[data-ra="accept"]').count(), 0);
+  const toP = demo.app.tg.calls('sendMessage').find((c) => Number(c.payload.chat_id) === P.id);
+  assert.match(toP.payload.text, /^🔔 Твоя очередь! Заявка #\d+\n\nОтправь трейд в Steal a Brainrot на ник: BossRBX/);
+  // the nick is kept: shown in «Пополнения»
+  await ad.page.evaluate(() => (location.hash = '#/admin/deposits'));
+  await ad.page.waitForSelector('#tradeNickIn');
+  assert.equal(await ad.page.inputValue('#tradeNickIn'), 'BossRBX');
+
+  // the player's card turns into the turn by itself: the nick and the 5 minutes
+  await pl.page.waitForSelector('.q-card.trade', { timeout: 9000 });
+  assert.equal(await pl.page.textContent('.q-pill'), 'Твоя очередь');
+  assert.equal(await pl.page.textContent('.q-nick'), 'BossRBX');
+  assert.match(await pl.page.textContent('.q-timer'), /^0[45]:\d\d$/);
+  // the bot's button opens the app on the card
+  const link = await open({ user: P, path: '/?go=queue' });
+  await link.page.waitForSelector('.q-card.trade');
+  assert.ok(!link.page.url().includes('go='));
+  await link.page.context().close();
+  // the 5 minutes are over: said so
+  await demo.ctx.db.query("UPDATE bs_requests SET accepted_at = now() - interval '6 minutes' WHERE id = $1", [id]);
+  await pl.page.waitForSelector('.q-timer.over', { timeout: 9000 });
+  assert.equal(await pl.page.textContent('.q-timer'), 'Время вышло');
+
+  // the admin credits and completes: the card closes, the coins arrive
+  const b0 = num(await pl.page.textContent('#bal'));
+  assert.equal((await demo.app.post(`/api/admin/requests/${id}/credit`, { user: ME, body: { amount: 300 } })).status, 200);
+  assert.equal((await demo.app.post(`/api/admin/requests/${id}/status`, { user: ME, body: { status: 'done' } })).status, 200);
+  await pl.page.waitForSelector(`.toast.ok:has-text("Заявка #${id} выполнена")`, { timeout: 9000 });
+  await pl.page.waitForSelector('.tu-opts');
+  await pl.page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 300, b0);
+  assert.equal(await pl.page.locator('.tu-q').count(), 0, 'nothing in the queue any more');
+  assert.deepEqual(pl.errors, []);
+  assert.deepEqual(ad.errors, []);
+  await pl.page.context().close();
+  await ad.page.context().close();
 });
 
 test('admin: «Можно пополнять» in the item editor decides which brainrots players can deposit', { skip }, async () => {
@@ -1833,14 +1925,15 @@ test('admin: requests are split into «Работает» / «Выполнено
     for (const [scope, statuses, labels] of [
       ['active', ['new', 'active'], ['Новая', 'В работе']],
       ['done', ['done'], ['Выполнена']],
-      ['rejected', ['rejected'], ['Отклонена']],
+      ['rejected', ['rejected'], ['Отклонена', 'Отменена']],
     ]) {
       await page.click(`.adm-seg [data-scope="${scope}"]`);
       await page.waitForSelector(`.adm-seg [data-scope="${scope}"].on`);
       await page.waitForSelector('#reqList');
       const want = await fromDb(kind, statuses);
       assert.deepEqual(sorted(await rowIds()), want, `${kind}/${scope}: exactly these requests`);
-      assert.ok((await badges()).every((b) => labels.includes(b)), `${kind}/${scope}: ${await badges()}`);
+      // a deposit waiting in the queue: «Новая · №2»
+      assert.ok((await badges()).every((b) => labels.some((l) => b === l || b.startsWith(l + ' · №'))), `${kind}/${scope}: ${await badges()}`);
       if (!want.length) assert.ok(await page.isVisible('#reqList .empty-box'));
     }
   }
