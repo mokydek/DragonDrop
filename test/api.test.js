@@ -87,7 +87,7 @@ test('bootstrap creates the player and returns everything the app needs', async 
   assert.deepEqual(b.share, { available: true, caseId: b.cases[2].id, nextAt: null, need: 5, have: 0, requireSub: false });
   assert.equal(b.cases.filter((c) => c.price > 0).length, 9);
   const griffin = b.cases.find((c) => c.slug === 'griffin');
-  assert.equal(griffin.price, 1160);
+  assert.equal(griffin.price, 1920);
   assert.equal(griffin.name.ru, 'Грифон кейс');
   assert.equal(griffin.items[0].item.name, 'Strawberry Elephant');
   const sum = griffin.items.reduce((s, e) => s + e.chance, 0);
@@ -132,9 +132,9 @@ test('opening a case needs coins, charges the price and records the drop', async
   const r = await app.post(`/api/case/${noob.id}/open`, { user: users.alice });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.item.name, 'W or L');
-  assert.equal(r.body.item.value, 73);
+  assert.equal(r.body.item.value, 120);
   assert.equal(r.body.item.rarity, 'rare');
-  assert.equal(r.body.balance, 89);
+  assert.equal(r.body.balance, 80);
 
   const inv = await app.get('/api/inventory', { user: users.alice });
   assert.equal(inv.body.inventory.length, 1);
@@ -142,8 +142,8 @@ test('opening a case needs coins, charges the price and records the drop', async
 
   const me = await app.get('/api/me', { user: users.alice });
   assert.equal(me.body.stats.casesOpened, 1);
-  assert.equal(me.body.stats.totalSpent, 11);
-  assert.equal(me.body.stats.totalWon, 73);
+  assert.equal(me.body.stats.totalSpent, 20);
+  assert.equal(me.body.stats.totalWon, 120);
   assert.equal(me.body.stats.bestDrop.name, 'W or L');
 
   const feed = await app.get('/api/feed');
@@ -161,9 +161,9 @@ test('opening a case 2, 3 or 5 times at once charges every opening', async () =>
   const u = users.dave;
   await app.post('/api/bootstrap', { user: u });
   const noob = caseBySlug('noob');
-  await app.setBalance(u.id, 25);
+  await app.setBalance(u.id, 50);
   const tooMany = await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count: 3 } });
-  assert.equal(tooMany.body.error, 'not_enough', '3 × 11 > 25');
+  assert.equal(tooMany.body.error, 'not_enough', '3 × 20 > 50');
   for (const count of [0, 4, 6, 10, 1.5, 'x']) {
     assert.equal((await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count } })).body.error, 'bad_request', String(count));
   }
@@ -171,15 +171,15 @@ test('opening a case 2, 3 or 5 times at once charges every opening', async () =>
   forceDrop('noob', 'W or L');
   const r = await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count: 2 } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.balance, 3);
+  assert.equal(r.body.balance, 10);
   assert.deepEqual(r.body.drops.map((d) => d.item.name), ['Tung Tung Tung Sahur', 'W or L']);
   assert.equal(r.body.item.name, 'Tung Tung Tung Sahur', 'first drop kept for older clients');
   const inv = (await app.get('/api/inventory', { user: u })).body.inventory;
   assert.deepEqual(inv.map((i) => i.invId).sort(), r.body.drops.map((d) => d.invId).sort());
   const st = (await app.get('/api/me', { user: u })).body.stats;
   assert.equal(st.casesOpened, 2);
-  assert.equal(st.totalSpent, 22);
-  assert.equal(st.totalWon, 20 + 73);
+  assert.equal(st.totalSpent, 40);
+  assert.equal(st.totalWon, 35 + 120);
   assert.equal(st.bestDrop.name, 'W or L');
   const feed = (await app.get('/api/feed')).body.feed.slice(0, 2).map((d) => d.item.name);
   assert.deepEqual(feed.sort(), ['Tung Tung Tung Sahur', 'W or L']);
@@ -187,16 +187,16 @@ test('opening a case 2, 3 or 5 times at once charges every opening', async () =>
   await app.setBalance(u.id, 30);
   const one = await app.post(`/api/case/${noob.id}/open`, { user: u });
   assert.equal(one.body.drops.length, 1);
-  assert.equal(one.body.balance, 19);
+  assert.equal(one.body.balance, 10);
   // x5: five drops, 5 × price, all in the inventory
-  await app.setBalance(u.id, 49);
-  assert.equal((await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count: 5 } })).body.error, 'not_enough', '5 × 11 > 49');
-  await app.setBalance(u.id, 57);
+  await app.setBalance(u.id, 99);
+  assert.equal((await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count: 5 } })).body.error, 'not_enough', '5 × 20 > 99');
+  await app.setBalance(u.id, 105);
   const invBefore = (await app.get('/api/inventory', { user: u })).body.inventory.length;
   const five = await app.post(`/api/case/${noob.id}/open`, { user: u, body: { count: 5 } });
   assert.equal(five.status, 200, JSON.stringify(five.body));
   assert.equal(five.body.drops.length, 5);
-  assert.equal(five.body.balance, 2);
+  assert.equal(five.body.balance, 5);
   assert.equal(new Set(five.body.drops.map((d) => d.invId)).size, 5);
   assert.equal((await app.get('/api/inventory', { user: u })).body.inventory.length, invBefore + 5);
   assert.equal((await app.get('/api/me', { user: u })).body.stats.casesOpened, 2 + 1 + 5);
@@ -207,7 +207,7 @@ test('selling items adds their value to the balance', async () => {
   const inv = (await app.get('/api/inventory', { user: users.alice })).body.inventory;
   const r = await app.post('/api/sell', { user: users.alice, body: { ids: [inv[0].invId] } });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { sold: 1, amount: 73, balance: 162 });
+  assert.deepEqual(r.body, { sold: 1, amount: 120, balance: 200 });
   const again = await app.post('/api/sell', { user: users.alice, body: { ids: [inv[0].invId] } });
   assert.equal(again.body.error, 'items_missing');
   assert.equal((await app.post('/api/sell', { user: users.alice, body: { ids: ['x'] } })).status, 400);
@@ -219,13 +219,13 @@ test('selling items adds their value to the balance', async () => {
   assert.equal(steal.body.error, 'items_missing');
 
   const all = await app.post('/api/sell', { user: users.alice, body: { all: true } });
-  assert.deepEqual(all.body, { sold: 1, amount: 1, balance: 152 });
+  assert.deepEqual(all.body, { sold: 1, amount: 5, balance: 185 });
   const me = await app.get('/api/me', { user: users.alice });
-  assert.equal(me.body.stats.soldValue, 74);
+  assert.equal(me.body.stats.soldValue, 125);
 });
 
 test('parallel openings never overdraw the balance', async () => {
-  await app.setBalance(users.bob.id, 11);
+  await app.setBalance(users.bob.id, 20);
   const noob = caseBySlug('noob');
   const results = await Promise.all(Array.from({ length: 6 }, () => app.post(`/api/case/${noob.id}/open`, { user: users.bob })));
   const ok = results.filter((r) => r.status === 200);
@@ -244,11 +244,11 @@ test('upgrader: validation, win and loss', async () => {
     const r = await app.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [u.id, it.id]);
     return r.id;
   };
-  const a = await give('Ketupat Kepat'); // 30
-  const b = await give('La Taco Combinasion'); // 42
-  const spooky = itemByName('Rico Dinero'); // 324
-  const cheap = itemByName('Tim Cheese'); // 1
-  const toilet = itemByName('Skibidi Toilet'); // 10309
+  const a = await give('Ketupat Kepat'); // 50
+  const b = await give('La Taco Combinasion'); // 70
+  const spooky = itemByName('Rico Dinero'); // 535
+  const cheap = itemByName('Tim Cheese'); // 5
+  const toilet = itemByName('Skibidi Toilet'); // 17010
 
   assert.equal((await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: cheap.id } })).body.error, 'target_too_cheap');
   assert.equal((await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: toilet.id } })).body.error, 'chance_too_low');
@@ -257,32 +257,32 @@ test('upgrader: validation, win and loss', async () => {
   assert.equal((await app.post('/api/upgrade', { user: u, body: { ids: [1, 2, 3, 4, 5, 6, 7], target: spooky.id } })).status, 400);
   assert.equal((await app.post('/api/upgrade', { user: u, body: { ids: [a], target: 999999 } })).status, 404);
 
-  // 72 / 324 * 90 = 20%, 1.06 times lower: 18.86% chance
+  // 120 / 535 * 90 = 20.19%, 1.06 times lower: 19.04% chance
   // the request carries the chance the player was shown; a different one is refused, nothing is spent
   const stale = await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: spooky.id, chance: 20 } });
   assert.equal(stale.status, 409);
   assert.equal(stale.body.error, 'chance_changed');
-  assert.equal(stale.body.chance, 18.86);
+  assert.equal(stale.body.chance, 19.04);
   assert.equal((await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: spooky.id } })).body.error, 'chance_changed', 'no chance sent');
   assert.equal((await app.get('/api/inventory', { user: u })).body.inventory.length, 2, 'nothing spent');
   // roll 0.000 wins
   rng.queue.push(0);
-  const win = await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: spooky.id, chance: 18.86 } });
+  const win = await app.post('/api/upgrade', { user: u, body: { ids: [a, b], target: spooky.id, chance: 19.04 } });
   assert.equal(win.status, 200, JSON.stringify(win.body));
   assert.equal(win.body.won, true);
-  assert.equal(win.body.chance, 18.86);
-  assert.equal(win.body.bet, 72);
+  assert.equal(win.body.chance, 19.04);
+  assert.equal(win.body.bet, 120);
   assert.equal(win.body.item.name, 'Rico Dinero');
   let inv = (await app.get('/api/inventory', { user: u })).body.inventory;
   assert.deepEqual(inv.map((i) => i.item.name), ['Rico Dinero']);
 
-  // Roll 18.860 is exactly on the edge -> loss (strictly lower wins)
+  // Roll 19.040 is exactly on the edge -> loss (strictly lower wins)
   const c = await give('Ketupat Kepat');
   const d = await give('La Taco Combinasion');
-  rng.queue.push(18860);
-  const lose = await app.post('/api/upgrade', { user: u, body: { ids: [c, d], target: spooky.id, chance: 18.86 } });
+  rng.queue.push(19040);
+  const lose = await app.post('/api/upgrade', { user: u, body: { ids: [c, d], target: spooky.id, chance: 19.04 } });
   assert.equal(lose.body.won, false);
-  assert.equal(lose.body.roll, 18.86);
+  assert.equal(lose.body.roll, 19.04);
   inv = (await app.get('/api/inventory', { user: u })).body.inventory;
   assert.deepEqual(inv.map((i) => i.item.name), ['Rico Dinero']);
 
@@ -414,7 +414,7 @@ test('admin: overview, cases and odds editing', async () => {
 
   const cases = (await app.get('/api/admin/cases', { user: admin })).body.cases;
   const noob = cases.find((c) => c.slug === 'noob');
-  assert.equal(noob.rtp, 87.67, 'about 90 %: the price is a whole number of coins');
+  assert.equal(noob.rtp, 89.27, 'up to 90 %: the price is rounded up to a multiple of 5');
   assert.equal(noob.chanceSum, 100);
 
   // Remove the rarest item and give the top item 50% (then the display normalises)
@@ -650,7 +650,7 @@ test('admin: settings and channel check', async () => {
   const s = await app.get('/api/admin/settings', { user: admin });
   assert.equal(s.body.settings.free_cooldown_hours, 24);
   // no main admin configured (OWNER_IDS / OWNER_USERNAMES): every admin has the main admin's settings
-  assert.equal(s.body.settings.stars_rate, 1);
+  assert.equal(s.body.settings.stars_rate, 2);
   assert.equal((await app.put('/api/admin/settings', { user: admin, body: { upgrade_min_chance: 90 } })).body.error, 'bad_setting');
   assert.equal((await app.put('/api/admin/settings', { user: admin, body: { support_url: 'ftp://x' } })).body.error, 'bad_setting');
   assert.equal((await app.post('/api/admin/check-channel', { user: admin })).body.error, 'no_channel');

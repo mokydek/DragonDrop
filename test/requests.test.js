@@ -74,14 +74,14 @@ test('stars: invoice link in XTR with coins by the admin rate', async () => {
   const r = await app.post('/api/topup/stars', { user: player, body: { stars: 150 } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.match(r.body.link, /^https:\/\/t\.me\/\$inv_/);
-  assert.equal(r.body.coins, 150, 'default rate: 1 coin per star');
+  assert.equal(r.body.coins, 300, 'default rate: 2 coins per star');
   assert.match(r.body.invoice, /^[a-f0-9]{16}$/);
   const call = app.tg.calls('createInvoiceLink')[0].payload;
   assert.equal(call.currency, 'XTR');
   assert.equal(call.provider_token, '');
-  assert.deepEqual(call.prices, [{ label: '150 монет', amount: 150 }]);
+  assert.deepEqual(call.prices, [{ label: '300 монет', amount: 150 }]);
   const p = parseStarsPayload(call.payload);
-  assert.deepEqual({ ...p, ts: undefined }, { userId: 1001, stars: 150, coins: 150, ts: undefined, invoice: r.body.invoice });
+  assert.deepEqual({ ...p, ts: undefined }, { userId: 1001, stars: 150, coins: 300, ts: undefined, invoice: r.body.invoice });
   assert.ok(Math.abs(p.ts - nowSec()) < 5);
   assert.equal(call.title, 'Пополнение баланса');
 
@@ -92,7 +92,7 @@ test('stars: invoice link in XTR with coins by the admin rate', async () => {
   const { buffs, ...topup } = boot.body.topup;
   assert.deepEqual(topup, { starsRate: 2.5, starsOpen: true, brainrotsOpen: true });
   assert.ok(Array.isArray(buffs) && buffs.length > 0, 'what buffs add to a deposited brainrot');
-  await app.ctx.settings.update({ stars_rate: 1 });
+  await app.ctx.settings.update({ stars_rate: 2 });
 
   for (const stars of [0, -5, 1.5, 10001, 'abc', null]) {
     const bad = await app.post('/api/topup/stars', { user: player, body: { stars } });
@@ -332,12 +332,12 @@ test('withdraw: brainrots leave the inventory and are held by the request', asyn
   assert.equal(w.kind, 'withdraw');
   assert.deepEqual(r.body.removed.sort(), [ids[0], ids[2]].sort());
   assert.deepEqual(w.items.map((i) => i.name), ['Cerberus', 'Capitano Moby']);
-  assert.equal(w.total, 182 + 124);
+  assert.equal(w.total, 300 + 205);
   assert.equal(w.exchange, null);
   assert.equal(r.body.rest, 0);
   const left = (await app.get('/api/inventory', { user: other })).body.inventory;
   assert.deepEqual(left.map((i) => i.item.name), ['Garama and Madundung']);
-  assert.match(lastSent(other.id).text, /^📤 Заявку на виведення #\d+ прийнято\.\n\nНік у Roblox: BobR\nБрейнроти: Cerberus, Capitano Moby\nНа суму: 306 🪙\n\nАдміністратор/);
+  assert.match(lastSent(other.id).text, /^📤 Заявку на виведення #\d+ прийнято\.\n\nНік у Roblox: BobR\nБрейнроти: Cerberus, Capitano Moby\nНа суму: 505 🪙\n\nАдміністратор/);
   assert.match(lastSent(admin.id).text, /^🆕 Вывод #\d+/);
   assert.equal(lastSent(admin.id).reply_markup.inline_keyboard[0][0].web_app.url, `https://app.dragondrop.test/?go=admin/withdrawals/${w.id}`);
   const counts = await app.get('/api/admin/requests/counts', { user: admin });
@@ -377,7 +377,7 @@ test('withdraw: only the listed brainrots; others are exchanged for one of them,
   const need = await app.post('/api/requests/withdraw', body());
   assert.equal(need.status, 400);
   assert.equal(need.body.error, 'need_exchange');
-  assert.equal(need.body.value, 22 + 170, 'value of the ones that must be exchanged');
+  assert.equal(need.body.value, 40 + 285, 'value of the ones that must be exchanged');
   assert.equal((await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Dragon Cannelloni').id }))).body.error, 'exchange_too_expensive');
   assert.equal((await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Tung Tung Tung Sahur').id }))).body.error, 'not_withdrawable');
   assert.equal((await app.post('/api/requests/withdraw', { user: other, body: { nick: 'BobR', ids: [garama], exchangeTo: itemByName('Cerberus').id } })).body.error, 'bad_request');
@@ -388,20 +388,20 @@ test('withdraw: only the listed brainrots; others are exchanged for one of them,
   app.tg.reset();
   const r = await app.post('/api/requests/withdraw', body({ exchangeTo: itemByName('Cerberus').id }));
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.rest, 192 - 182);
-  assert.equal(r.body.balance, before + 10);
-  assert.equal(await balance(other.id), before + 10);
+  assert.equal(r.body.rest, 325 - 300);
+  assert.equal(r.body.balance, before + 25);
+  assert.equal(await balance(other.id), before + 25);
   const w = r.body.request;
   assert.deepEqual(w.items.map((i) => i.name), ['Cerberus', 'Garama and Madundung'], 'kept one + the exchange');
-  assert.equal(w.total, 182 + 104);
+  assert.equal(w.total, 300 + 175);
   assert.deepEqual(w.exchange.from.map((i) => i.name).sort(), ['Los Chillis', 'Pot Hotspot']);
-  assert.equal(w.exchange.rest, 10);
+  assert.equal(w.exchange.rest, 25);
   assert.equal((await app.get('/api/inventory', { user: other })).body.inventory.length, 0);
   const log = await app.ctx.db.one('SELECT delta FROM bs_balance_log WHERE reason = $1', [`exchange:#${w.id}`]);
-  assert.equal(log.delta, 10);
-  assert.match(lastSent(other.id).text, /Брейнроти: Cerberus, Garama and Madundung\nНа суму: 286 🪙\nЗалишок на баланс: \+10 🪙/);
+  assert.equal(log.delta, 25);
+  assert.match(lastSent(other.id).text, /Брейнроти: Cerberus, Garama and Madundung\nНа суму: 475 🪙\nЗалишок на баланс: \+25 🪙/);
   const d = (await app.get(`/api/admin/requests/${w.id}`, { user: admin })).body.request;
-  assert.equal(d.exchange.value, 192);
+  assert.equal(d.exchange.value, 325);
 
   // declined: the withdrawable brainrots come back (the exchange stays done)
   await app.post(`/api/admin/requests/${w.id}/status`, { user: admin, body: { status: 'rejected' } });

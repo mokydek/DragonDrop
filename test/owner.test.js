@@ -93,21 +93,21 @@ test('OWNER_IDS works without a username; regular admins are unaffected', async 
 test('Stars rate: only the main admin sees and changes it', async () => {
   const s = settingsOf;
   assert.ok(!('stars_rate' in (await s(admin))), 'a regular admin does not even see the field');
-  assert.equal((await s(owner)).stars_rate, 1);
+  assert.equal((await s(owner)).stars_rate, 2);
   // a regular admin's save never touches the rate, the rest is saved
   const r = await app.put('/api/admin/settings', { user: admin, body: { stars_rate: 999, start_balance: 7 } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.ok(!('stars_rate' in r.body.settings));
   assert.equal(r.body.settings.start_balance, 7);
-  assert.equal(app.ctx.settings.get('stars_rate'), 1);
+  assert.equal(app.ctx.settings.get('stars_rate'), 2);
   // the main admin changes it; players get the new rate
   const o = await app.put('/api/admin/settings', { user: owner, body: { stars_rate: 2.5 } });
   assert.equal(o.status, 200, JSON.stringify(o.body));
   assert.equal(o.body.settings.stars_rate, 2.5);
   assert.equal((await app.get('/api/catalog', { user: users.alice })).body.topup.starsRate, 2.5);
   assert.equal((await app.put('/api/admin/settings', { user: owner, body: { stars_rate: 0 } })).status, 400, 'still validated');
-  await app.put('/api/admin/settings', { user: owner, body: { stars_rate: 1, start_balance: 0 } });
-  assert.equal(app.ctx.settings.get('stars_rate'), 1);
+  await app.put('/api/admin/settings', { user: owner, body: { stars_rate: 2, start_balance: 0 } });
+  assert.equal(app.ctx.settings.get('stars_rate'), 2);
 });
 
 test('buffs on deposited brainrots: every player sees them, only the main admin changes them', async () => {
@@ -260,19 +260,19 @@ test('account bad luck: only the main admin sees and sets it; that player gets t
   assert.equal(boot.upgrade.luck, 2.12);
   assert.ok(!('luck' in boot.me) && !('upgrade_luck' in boot.me));
   assert.equal((await app.get('/api/catalog', { user: users.bob })).body.upgrade.luck, 1.06);
-  // the upgrade rolls the very chance that player is shown: 72 / 324 * 90 = 20% -> / 2.12 = 9.43%
+  // the upgrade rolls the very chance that player is shown: 120 / 535 * 90 = 20.19% -> / 2.12 = 9.52%
   const item = (name) => [...app.ctx.game.catalog.items.values()].find((i) => i.name === name).id;
   const put = async (name) =>
     (await app.ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'test') RETURNING id", [p.id, item(name)])).id;
   const ids = [await put('Ketupat Kepat'), await put('La Taco Combinasion')];
   const target = item('Rico Dinero');
-  const stale = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 18.86 } });
+  const stale = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 19.04 } });
   assert.equal(stale.status, 409);
-  assert.equal(stale.body.chance, 9.43);
-  const up = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 9.43 } });
+  assert.equal(stale.body.chance, 9.52);
+  const up = await app.post('/api/upgrade', { user: p, body: { ids, target, chance: 9.52 } });
   assert.equal(up.status, 200, JSON.stringify(up.body));
-  assert.equal(up.body.chance, 9.43);
-  assert.equal((await app.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [p.id])).chance, 9.43);
+  assert.equal(up.body.chance, 9.52);
+  assert.equal((await app.ctx.db.one('SELECT chance FROM bs_upgrades WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [p.id])).chance, 9.52);
   // back to normal
   assert.deepEqual((await app.post(`/api/admin/users/${p.id}/luck`, { user: owner, body: { luck: '1' } })).body, { luck: 1 });
   assert.equal((await app.get('/api/catalog', { user: p })).body.upgrade.luck, 1.06);
