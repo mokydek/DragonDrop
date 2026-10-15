@@ -506,6 +506,15 @@ function freeStatusText() {
   return f.nextAt && new Date(f.nextAt) > new Date() ? t('freeIn', { t: countdown(f.nextAt) }) : t('freeReady');
 }
 
+/** What the FREE case asks for: the subscription only with a channel set, the share only when it is on. */
+function freeHint() {
+  const f = S.free || {};
+  if (f.requireSub && f.requireShare) return t('freeHint');
+  if (f.requireShare) return t('freeHintShare');
+  if (f.requireSub) return t('freeHintSub');
+  return t('freeHintNone');
+}
+
 function caseCard(c) {
   return html`<button class="case-card" data-case="${c.id}" style="--cc:${c.color};--cca:${rgba(c.color, 0.34)}">
     <div class="case-glow"></div>
@@ -611,7 +620,7 @@ function viewCases(view) {
           <div class="free-chest${fc.image ? ' has-img' : ''}">${caseImg(fc, 86)}</div>
           <div class="free-info">
             <div class="free-title">${caseName(fc)}</div>
-            <div class="free-sub">${t('freeHint')}</div>
+            <div class="free-sub">${freeHint()}</div>
           </div>
           <div class="free-state ${S.free && S.free.nextAt && new Date(S.free.nextAt) > new Date() ? '' : 'ready'}" id="freeState">${freeStatusText()}</div>
         </button>`
