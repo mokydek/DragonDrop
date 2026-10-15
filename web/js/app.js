@@ -1671,8 +1671,8 @@ async function crashGo() {
 
 // ------------------------------------------------------------------ colour dice
 // The player picks a colour and a stake; the server throws three dice (each shows one of six colours)
-// and pays ×2 / ×4 for 1 / 3 dice of the colour; two dice of one colour (a pair) lose. The app only
-// shows the throw it got back.
+// and pays ×2 / ×4 for 1 / 3 dice of the colour; 2 dice of the colour lose (two of another colour
+// change nothing). The app only shows the throw it got back.
 const DICE_HEX = { red: '#ef4444', yellow: '#facc15', green: '#22c55e', blue: '#3b82f6', purple: '#a855f7', orange: '#f97316' };
 let diceLast = null; // the last throw, shown on the dice until another one
 const diceSel = new Set(); // inventory ids staked in brainrots mode
@@ -1684,7 +1684,7 @@ function dieHtml(c, i, last) {
 
 /** What the last throw brought, under the dice. */
 function diceNote(r) {
-  // lost: the colour did not come up, or it did but two dice showed one colour
+  // lost: the colour did not come up, or it came up on two dice
   if (!r.win) return html`<span class="dn-lost">${t(r.matches ? 'dice.pair' : 'dice.lost')}</span>`;
   const head = html`<b class="dn-won">${t('dice.won', { n: r.matches, m: r.mult })}</b>`;
   if (r.kind === 'brainrots') {
