@@ -1,5 +1,5 @@
 import { tg, html, raw, render, $, $$, sleep, store, haptic, coin, chest, itemArt, initials, countdown, rgba, mmss, tickTimers } from './util.js';
-import { t, setLang, lang, fmt, fmtDate, fmtDateTime, LANGS } from './i18n.js';
+import { t, setLang, lang, fmt, fmtDate, fmtDateTime, fmtPayout, LANGS } from './i18n.js';
 import * as API from './api.js';
 import { startBubbles, setBubbleTint, setSkyMode } from './bubbles.js';
 import { PUMPKIN, webSvg, SPIDER, NIGHT } from './halloween.js';
@@ -32,6 +32,7 @@ const ICON = {
   users:
     '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.9-3.6 3.4-5.5 6.5-5.5s5.6 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.4 3.5 5.2"/></svg>',
   copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19.3 8.7a2.1 2.1 0 0 0 0-3L18.3 4.7a2.1 2.1 0 0 0-3 0L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
   gift: '<svg viewBox="0 0 24 24"><rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5v7A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-7M12 8.5V21M12 8.5S10.8 4 8.2 4a2.25 2.25 0 0 0 0 4.5M12 8.5S13.2 4 15.8 4a2.25 2.25 0 0 1 0 4.5"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/></svg>',
@@ -1994,18 +1995,38 @@ function inviteHead() {
 function drawInvite(view) {
   const v = S.invites;
   const stat = (val, k) => html`<div class="stat"><div class="s-val">${val}</div><div class="s-lbl">${t(k)}</div></div>`;
+  const copyBtn = (act, attrs) => html`<button class="icon-btn small" data-act="${act}" ${raw(attrs)} aria-label="${t('copy')}">${raw(ICON.copy)}</button>`;
   render(
     view,
     html`${inviteHead()}
-    <div class="ref-card">
-      <div class="ref-lbl">${t('invYourLink')}</div>
-      ${v.link ? html`<button class="ref-code invite-link" data-act="copy-invite" data-link="${v.link}">${v.link.replace(/^https:\/\//, '')}${raw(ICON.copy)}</button>` : ''}
-      <div class="ref-gives">${v.pct > 0 ? t('invGives', { p: fmt(v.pct) }) : t('invOff')}</div>
+    <div class="inv-field">
+      <div class="inv-lbl">${t('invYourLink')}</div>
+      <div class="inv-box">
+        ${v.link
+          ? html`<button class="inv-val invite-link" data-act="copy-invite" data-link="${v.link}">${v.link.replace(/^https:\/\//, '')}</button>${copyBtn('copy-invite', `data-link="${v.link}"`)}`
+          : html`<span class="inv-val">—</span>`}
+      </div>
     </div>
+    <div class="inv-field">
+      <div class="inv-lbl">${t('invCode')}</div>
+      <div class="inv-box">
+        <button class="inv-val inv-code" data-act="copy-ref" data-code="${v.code}">${v.code}</button>
+        <button class="icon-btn small" data-act="invite-code" aria-label="${t('edit')}">${raw(ICON.edit)}</button>
+        ${copyBtn('copy-ref', `data-code="${v.code}"`)}
+      </div>
+    </div>
+    <div class="inv-gives">${v.pct > 0 ? t('invGives', { p: fmt(v.pct) }) : t('invOff')}</div>
     <button class="btn primary big invite-send" data-act="invite-send" ${v.link ? '' : raw('disabled')}>${t('invSend')}</button>
+    <div class="inv-pending">
+      <span class="inv-pending-lbl">${t('invPending')}</span>
+      <span class="inv-pending-val">${money(v.pending, 15)}<small>${t('invPayout', { d: fmtPayout(v.payoutAt) })}</small></span>
+    </div>
     <div class="invite-wallet">
-      <span class="invite-sum"><small>${t('invAvailable')}</small>${money(v.balance, 18)}</span>
-      <button class="btn small" data-act="invite-claim" ${v.balance > 0 ? '' : raw('disabled')}>${t('invClaim')}</button>
+      <div class="inv-lbl">${t('invAvailable')}</div>
+      <div class="invite-wallet-row">
+        <span class="invite-sum">${money(v.balance, 22)}</span>
+        <button class="btn small" data-act="invite-claim" ${v.balance > 0 ? '' : raw('disabled')}>${t('invClaim')}</button>
+      </div>
     </div>
     <h3 class="sec-title">${t('stats')}</h3>
     <div class="stats">${stat(fmt(v.friends), 'invFriends')}${stat(fmt(v.paying), 'invPaying')}${stat(money(v.earned, 15), 'invEarned')}</div>
@@ -2017,6 +2038,41 @@ function drawInvite(view) {
         )}</div>`
       : html`<div class="empty-box"><p>${t('invNone')}</p></div>`}`,
   );
+}
+
+/** The player's own partner promo code: 4–16 Latin letters and digits; the link changes with it. */
+function editInviteCode() {
+  const v = S.invites;
+  if (!v) return;
+  const sheet = openModal(
+    html`<div class="promo">
+      <div class="sheet-title">${t('invCode')}</div>
+      <form id="invCodeForm" autocomplete="off">
+        <input class="input code-input" id="invCodeIn" maxlength="16" value="${v.code}" autocapitalize="characters" autocorrect="off" spellcheck="false">
+        <button class="btn primary big" type="submit">${t('save')}</button>
+      </form>
+    </div>`,
+  );
+  const input = sheet.querySelector('#invCodeIn');
+  setTimeout(() => input.focus(), 250);
+  sheet.querySelector('#invCodeForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = input.value.trim();
+    if (!code || S.busy) return;
+    S.busy = true;
+    try {
+      const r = await API.post('/invites/code', { code });
+      S.invites = { ...S.invites, code: r.code, link: r.link };
+      haptic.notify('success');
+      closeModal();
+      toast(t('invCodeSaved'), 'ok');
+    } catch (err) {
+      showError(err);
+    } finally {
+      S.busy = false;
+      if (route().view === 'invite') drawInvite($('#view'));
+    }
+  });
 }
 
 /** Sends the player's link: Telegram's share sheet with the picture and a button, or a share link. */
@@ -2149,9 +2205,11 @@ function openPromo() {
     if (!code) return;
     try {
       const r = await API.post('/promo', { code });
-      setBalance(r.balance);
       haptic.notify('success');
       closeModal();
+      // a friend's partner promo code: that friend now gets a share of this player's top-ups
+      if (r.invite) return toast(t('invFriendOk', { name: r.invite.name }), 'ok');
+      setBalance(r.balance);
       toast(t('promoOk', { n: fmt(r.amount) }), 'ok');
       if (route().view === 'case' || route().view === 'profile') renderView();
     } catch (err) {
@@ -2953,6 +3011,7 @@ const actions = {
   },
   'invite-send': () => sendInvite(),
   'invite-claim': () => claimInvites(),
+  'invite-code': () => editInviteCode(),
   'copy-ref': async (b) => {
     haptic.tick();
     try {
