@@ -211,7 +211,7 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
   for (const k of [...used, ...dynamic]) assert.ok(k in DICTS.ru, `missing text key: ${k}`);
 
   // every error code the player API can return has a message
-  const server = ['game.js', 'api.js', 'crash.js', 'dice.js', 'autopromo.js'].map((f) => rf(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
+  const server = ['game.js', 'api.js', 'crash.js', 'dice.js', 'autopromo.js', 'invites.js'].map((f) => rf(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n');
   const codes = new Set([...server.matchAll(/GameError\('([a-z_]+)'/g)].map((m) => m[1]));
   const handledElsewhere = new Set(['use_free_endpoint', 'bad_request', 'item_not_found', 'unauthorized', 'not_found']);
   for (const c of codes) if (!handledElsewhere.has(c)) assert.ok('e.' + c in DICTS.ru, `no message for error ${c}`);
