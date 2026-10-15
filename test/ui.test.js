@@ -6,6 +6,7 @@ import { scriptedRng } from './helpers.js';
 import { signWebToken } from '../src/auth.js';
 import { starsPayload } from '../src/requests.js';
 import { ITEM_ART, itemSlug } from '../src/game.js';
+import { payoutWindow } from '../src/invites.js';
 
 let pw = null;
 try {
@@ -1327,7 +1328,7 @@ test('referral levels: a partner opens Referrals from the profile — code, leve
   }
 });
 
-test('invite friends: from the profile — the link (copied by a tap), sending it, the friends and what their top-ups brought, moved to the balance', { skip }, async () => {
+test('invite friends (the referral page): link and partner promo code (copied, changed), sending it, income pending till Saturday, the referral balance moved to the balance', { skip }, async () => {
   const host = demo.others[5];
   const friends = ['Рома', 'Вика'].map((n, i) => ({ id: 7501 + i, first_name: n, language_code: 'ru' }));
   const { page, errors } = await open({ user: host, path: '/#/profile' });
@@ -1338,29 +1339,67 @@ test('invite friends: from the profile — the link (copied by a tap), sending i
   await page.waitForSelector('.invite-link');
   assert.equal(await page.evaluate(() => location.hash), '#/invite');
   assert.equal(await page.textContent('.vh-title'), 'Пригласить друзей');
-  assert.equal(await page.textContent('.ref-lbl'), 'Твоя ссылка');
+  assert.deepEqual(await page.$$eval('.inv-field .inv-lbl', (els) => els.map((e) => e.textContent)), ['Реферальная ссылка', 'Партнёрский промокод']);
   const link = await page.getAttribute('.invite-link', 'data-link');
-  assert.match(link, /^https:\/\/t\.me\/DragonDrop_Bot\?start=inv_[A-Za-z0-9]{8}$/);
+  const code = (await page.textContent('.inv-code')).trim();
+  assert.match(code, /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+  assert.equal(link, `https://t.me/DragonDrop_Bot?start=${code}`);
   assert.equal((await page.textContent('.invite-link')).trim(), link.replace('https://', ''));
-  assert.equal(await page.textContent('.ref-gives'), 'Получай 5% с каждого пополнения друзей, которые пришли по ней');
+  assert.equal(await page.textContent('.inv-gives'), 'Получай 5% с каждого пополнения друзей, которые пришли по ссылке или ввели твой промокод');
   assert.equal((await page.textContent('[data-act="invite-send"]')).trim(), 'Отправить ссылку друзьям');
+  // the income of this week and when it is paid out (next Saturday, in the player's time)
+  assert.equal(await page.textContent('.inv-pending-lbl'), 'Предварительный доход');
+  const sat = new Date(payoutWindow().next);
+  const when = `${sat.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, ${sat.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+  assert.equal(await page.textContent('.inv-pending-val small'), `Начислится в субботу, ${when}`);
+  assert.equal(num(await page.textContent('.inv-pending-val .money')), 0);
+  assert.equal(await page.textContent('.invite-wallet .inv-lbl'), 'Реферальный баланс');
   assert.equal((await page.textContent('[data-act="invite-claim"]')).trim(), 'Перевести на баланс');
   assert.equal(await page.isDisabled('[data-act="invite-claim"]'), true, 'nothing to move yet');
   assert.equal((await page.textContent('.empty-box')).trim(), 'Пока никого — отправь ссылку друзьям');
-  // the link is copied by a tap
+  // the link and the code are copied by a tap (the text or the button next to it)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.click('.invite-link');
   await page.waitForSelector('.toast.ok');
   assert.equal(await page.textContent('.toast.ok'), 'Скопировано');
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), link);
+  await page.click('.inv-box .icon-btn[data-act="copy-ref"]');
+  await page.waitForFunction((c) => navigator.clipboard.readText().then((t) => t === c), code);
+  // the code changed with the pencil: a wrong one is refused, a good one changes the link too
+  await page.waitForSelector('.toast', { state: 'detached', timeout: 6000 });
+  await page.click('[data-act="invite-code"]');
+  await page.waitForSelector('#invCodeIn');
+  assert.equal(await page.inputValue('#invCodeIn'), code);
+  assert.equal(await page.textContent('.sheet-title'), 'Партнёрский промокод');
+  await page.fill('#invCodeIn', 'ab');
+  await page.click('#invCodeForm [type="submit"]');
+  await page.waitForSelector('.toast.error');
+  assert.equal(await page.textContent('.toast.error'), 'Код — от 4 до 16 латинских букв и цифр');
+  await page.fill('#invCodeIn', 'roma2026');
+  await page.click('#invCodeForm [type="submit"]');
+  await page.waitForSelector('.toast.ok');
+  assert.equal(await page.textContent('.toast.ok'), 'Промокод изменён');
+  await page.waitForFunction(() => document.querySelector('.inv-code')?.textContent === 'ROMA2026');
+  assert.equal((await page.textContent('.invite-link')).trim(), 't.me/DragonDrop_Bot?start=ROMA2026');
   // sent through Telegram: its share sheet with the picture and a button with the link
   await page.click('[data-act="invite-send"]');
   await page.waitForFunction(() => window.__tgCalls.some((c) => c[0] === 'shareMessage'));
   assert.deepEqual(await page.evaluate(() => window.__tgCalls.filter((c) => c[0] === 'shareMessage')), [['shareMessage', `prep_${host.id}`]]);
 
-  // two friends come by the link; one of them tops up twice: 100 ⭐ and 300 ⭐ → 5 + 15
-  const code = link.split('start=')[1];
-  for (const f of friends) await demo.app.message(f, `/start ${code}`);
+  // one friend comes by the link, the other types the code in «Промокод»; the first tops up twice: 100 ⭐ and 300 ⭐ → 5 + 15
+  await demo.app.message(friends[0], '/start ROMA2026');
+  {
+    const f = await open({ user: friends[1], path: '/#/cases' });
+    await f.page.waitForSelector('[data-act="promo"]');
+    await f.page.click('[data-act="promo"]');
+    await f.page.waitForSelector('#promoInput');
+    await f.page.fill('#promoInput', 'roma2026');
+    await f.page.click('#promoForm [type="submit"]');
+    await f.page.waitForSelector('.toast.ok');
+    assert.equal(await f.page.textContent('.toast.ok'), `Код друга принят: ${host.first_name}`);
+    assert.deepEqual(f.errors, []);
+    await f.page.context().close();
+  }
   await payStars(friends[0], 100);
   await payStars(friends[0], 300);
   await page.reload();
@@ -1377,10 +1416,19 @@ test('invite friends: from the profile — the link (copied by a tap), sending i
     ['Рома', '+20'],
   ]);
   assert.equal(await page.textContent('.sec-title:has(.cnt) .cnt'), '2');
+  // this week: pending, not on the referral balance yet
+  assert.equal(num(await page.textContent('.inv-pending-val .money')), 20);
+  assert.equal(num(await page.textContent('.invite-sum')), 0);
+  assert.equal(await page.isDisabled('[data-act="invite-claim"]'), true);
+  // Saturday has come: on the referral balance
+  await demo.ctx.db.query("UPDATE bs_invite_rewards SET created_at = created_at - interval '8 days' WHERE inviter_id = $1", [host.id]);
+  await page.reload();
+  await page.waitForSelector('.invite-friends .row');
+  assert.equal(num(await page.textContent('.inv-pending-val .money')), 0);
   assert.equal(num(await page.textContent('.invite-sum')), 20);
   assert.equal(await page.isDisabled('[data-act="invite-claim"]'), false);
 
-  // streamer mode: the sums are blurred, the link stays
+  // streamer mode: the sums are blurred, the link and the code stay
   await page.click('.view-head .back');
   await page.waitForSelector('.p-card');
   await page.click('[data-act="streamer"]');
@@ -1388,8 +1436,8 @@ test('invite friends: from the profile — the link (copied by a tap), sending i
   await page.waitForSelector('.invite-friends .row');
   await page.waitForTimeout(250);
   const blur = (sel) => page.$$eval(sel, (els) => els.map((e) => /^blur\(/.test(getComputedStyle(e).filter)));
-  assert.deepEqual(await blur('.invite-sum b, .invite-earn b, .stats .stat .s-val b'), [true, true, true]);
-  assert.deepEqual(await blur('.invite-link'), [false]);
+  assert.deepEqual(await blur('.invite-sum b, .inv-pending-val b, .invite-earn b, .stats .stat .s-val b'), [true, true, true, true]);
+  assert.deepEqual(await blur('.invite-link, .inv-code'), [false, false]);
   await page.click('.view-head .back');
   await page.click('[data-act="streamer"]');
   await page.click('.p-link[href="#/invite"]');
@@ -1403,7 +1451,7 @@ test('invite friends: from the profile — the link (copied by a tap), sending i
   await page.waitForFunction((b) => Number(document.querySelector('#bal').textContent.replace(/\D/g, '')) === b + 20, before);
   assert.equal(num(await page.textContent('.invite-sum')), 0);
   assert.equal(await page.isDisabled('[data-act="invite-claim"]'), true);
-  assert.equal(Number((await demo.ctx.db.one('SELECT invite_balance FROM bs_users WHERE id = $1', [host.id])).invite_balance), 0);
+  assert.equal(Number((await demo.ctx.db.one("SELECT coalesce(sum(delta), 0) AS n FROM bs_balance_log WHERE user_id = $1 AND reason = 'invites'", [host.id])).n), 20);
   // a small phone: nothing sticks out
   await page.setViewportSize({ width: 360, height: 740 });
   await page.waitForTimeout(300);
@@ -1419,7 +1467,7 @@ test('invite friends: from the profile — the link (copied by a tap), sending i
   await a.page.click(`.kv a[href="#/admin/users/${host.id}"]`);
   await a.page.waitForFunction((id) => document.querySelector('.kv b')?.textContent === String(id), host.id);
   const card = await kv();
-  assert.equal(num(card['Друзья по ссылке']), 2);
+  assert.equal(num(card['Приглашённые друзья']), 2);
   assert.equal(num(card['Заработал на друзьях']), 20);
   assert.deepEqual(a.errors, []);
   await a.page.context().close();
