@@ -185,8 +185,18 @@ export function createBot({ config, db, settings, game, users, live, paths, requ
       const r = await game.redeemPromo(u.id, text);
       await ctx.reply(t.promoOk(r.amount, r.balance));
     } catch (e) {
-      if (!(e instanceof GameError)) console.error('[bot] promo error:', e);
-      await ctx.reply(t.promoErr[e.code] || t.promoErr.default);
+      let err = e;
+      // not a promo code of the admins: maybe a friend's code (their partner promo code)
+      if (e instanceof GameError && e.code === 'promo_invalid' && invites) {
+        try {
+          const friend = await invites.useCode(u, text);
+          if (friend) return ctx.reply(t.friendCodeOk(friend.inviter.name));
+        } catch (e2) {
+          err = e2;
+        }
+      }
+      if (!(err instanceof GameError)) console.error('[bot] promo error:', err);
+      await ctx.reply(t.promoErr[err.code] || t.promoErr.default);
     }
   });
 
