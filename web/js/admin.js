@@ -667,6 +667,16 @@ function itemSource(f) {
   }
 }
 
+/** The player card: who invited the player, the friends they brought by their link and what it gave. */
+function inviteRows(v) {
+  if (!v) return '';
+  return h`${v.inviter ? h`<div class="kv"><span>${C.t('a.invitedBy')}</span><a href="#/admin/users/${v.inviter.id}">${v.inviter.name}</a></div>` : ''}
+    ${v.friends || v.earned
+      ? h`<div class="kv"><span>${C.t('a.invites')}</span><b>${C.fmt(v.friends)}</b></div>
+        <div class="kv"><span>${C.t('a.invEarned')}</span><b>${C.money(v.earned, 12)}${v.balance > 0 ? h` <small>(${C.t('a.invNotMoved')} ${C.money(v.balance, 11)})</small>` : ''}</b></div>`
+      : ''}`;
+}
+
 async function userDetail(body, id) {
   const d = await C.API.get(`/admin/users/${id}`);
   if (!body.isConnected) return;
@@ -682,6 +692,7 @@ async function userDetail(body, id) {
       <div class="kv"><span>ID</span><b>${u.id}</b></div>
       ${u.username ? h`<div class="kv"><span>Username</span><b>@${u.username}</b></div>` : ''}
       ${u.ref ? h`<div class="kv"><span>${C.t('a.refOf')}</span>${can('referrals') ? h`<a class="code" href="#/admin/referrals/${encodeURIComponent(u.ref)}">${u.ref}</a>` : h`<b class="code">${u.ref}</b>`}</div>` : ''}
+      ${inviteRows(d.invites)}
       <div class="kv"><span>${C.t('a.lastSeen')}</span><b>${new Date(u.lastSeen).toLocaleString()}</b></div>
       <div class="kv"><span>${C.t('a.balance')}</span><b id="uBal">${C.money(u.balance, 14)}</b></div>
       <div class="bal-row">
@@ -1058,6 +1069,7 @@ const SETTING_FIELDS = [
   ['dice_max_bet', 'number'],
   ['start_balance', 'number'],
   ['stars_rate', 'number'],
+  ['invite_pct', 'number'],
   ['ref_count_stars', 'bool'],
   ['auto_promo', 'bool'],
   ['auto_promo_min', 'number'],
