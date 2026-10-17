@@ -316,7 +316,45 @@ test('deposit: admin credits coins and gives a brainrot, then completes it', asy
 });
 
 // ------------------------------------------------------------------ withdrawals
+test('withdraw: opens after top-ups of 100 ⭐ or brainrots worth one Garama and Madundung', async () => {
+  const u = users.dave;
+  await app.post('/api/bootstrap', { user: u });
+  const [cer] = await giveItems(u.id, ['Cerberus']);
+  const garama = itemByName('Garama and Madundung');
+  const state = async () => (await app.get('/api/me', { user: u })).body.withdraw;
+  assert.deepEqual(await state(), { open: false, stars: 0, brainrots: 0, need: { stars: 100, item: { id: garama.id, name: garama.name, value: garama.value } } });
+  const locked = await app.post('/api/requests/withdraw', { user: u, body: { nick: 'DaveR', ids: [cer] } });
+  assert.equal(locked.status, 403);
+  assert.deepEqual(locked.body, { error: 'withdraw_locked', stars: 100, item: 'Garama and Madundung' });
+  assert.equal((await app.get('/api/inventory', { user: u })).body.inventory.length, 1, 'nothing taken');
+
+  // 99 ⭐ and brainrots worth less than one Garama: still locked
+  await app.paidStars(u.id, 99);
+  const dep = await app.ctx.db.one(
+    "INSERT INTO bs_requests (user_id, kind, method, status, coins) VALUES ($1, 'deposit', 'brainrot', 'active', $2) RETURNING id",
+    [u.id, garama.value - 1],
+  );
+  assert.equal((await state()).open, false);
+  assert.equal((await state()).stars, 99);
+  // coins credited + brainrots given on a brainrot deposit count (also while it is still open)
+  await app.post(`/api/admin/requests/${dep.id}/give`, { user: admin, body: { itemId: itemByName('Tung Tung Tung Sahur').id } });
+  assert.equal((await state()).open, true);
+  await freshWindow();
+  const ok = await app.post('/api/requests/withdraw', { user: u, body: { nick: 'DaveR', ids: [cer] } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  await app.ctx.db.query("UPDATE bs_requests SET status = 'done' WHERE user_id = $1", [u.id]);
+
+  // 100 ⭐ alone open it too
+  const e = { id: 1005, first_name: 'Erin', language_code: 'en' };
+  await app.post('/api/bootstrap', { user: e });
+  await app.paidStars(e.id, 60);
+  await app.paidStars(e.id, 40);
+  assert.equal((await app.get('/api/me', { user: e })).body.withdraw.open, true);
+});
+
 test('withdraw: brainrots leave the inventory and are held by the request', async () => {
+  await app.paidStars(other.id);
+  await app.paidStars(users.carol.id);
   const ids = await giveItems(other.id, ['Cerberus', 'Garama and Madundung', 'Capitano Moby']);
   const bad = await app.post('/api/requests/withdraw', { user: other, body: { nick: 'BobR', ids: [ids[0], 999999] } });
   assert.equal(bad.body.error, 'items_missing');

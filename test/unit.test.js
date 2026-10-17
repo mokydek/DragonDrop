@@ -236,7 +236,7 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
   // deposits / withdrawals: player errors have a message, admin-only errors an admin message
   const req = rf(new URL('../src/requests.js', import.meta.url), 'utf8');
   const reqCodes = new Set([...req.matchAll(/(?:GameError\(|cleanText\([^;]*?, )'([a-z_]+)'/g)].map((m) => m[1]));
-  const playerSide = ['bad_nick', 'bad_details', 'bad_offer', 'too_many_requests', 'bad_stars', 'bot_disabled', 'invoice_failed', 'items_missing', 'need_exchange', 'exchange_too_expensive', 'not_withdrawable', 'deposits_closed', 'promo_used', 'deposit_open', 'request_in_work'];
+  const playerSide = ['bad_nick', 'bad_details', 'bad_offer', 'too_many_requests', 'bad_stars', 'bot_disabled', 'invoice_failed', 'items_missing', 'need_exchange', 'exchange_too_expensive', 'not_withdrawable', 'deposits_closed', 'promo_used', 'deposit_open', 'request_in_work', 'withdraw_locked'];
   for (const c of playerSide) {
     assert.ok(reqCodes.has(c), `requests.js no longer throws ${c}`);
     assert.ok('e.' + c in DICTS.ru, `no message for error ${c}`);

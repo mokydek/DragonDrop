@@ -102,6 +102,10 @@ export async function startApp({ dbName, env = {}, rng, now, autoPromoRng, prepa
   async function setBalance(userId, balance) {
     await ctx.db.query('UPDATE bs_users SET balance = $2 WHERE id = $1', [userId, balance]);
   }
+  /** A Stars top-up already paid (withdrawals open after the first top-ups). */
+  async function paidStars(userId, stars = 100) {
+    await ctx.db.query("INSERT INTO bs_requests (user_id, kind, method, status, stars, coins) VALUES ($1, 'deposit', 'stars', 'done', $2, $3)", [userId, stars, stars]);
+  }
 
   return {
     ctx,
@@ -118,6 +122,7 @@ export async function startApp({ dbName, env = {}, rng, now, autoPromoRng, prepa
     message,
     makeAdmin,
     setBalance,
+    paidStars,
     async close() {
       await ctx.stop();
       await tg.close();

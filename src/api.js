@@ -185,6 +185,7 @@ export function createApi(deps) {
         bot: tg.botUsername || null,
         topup: topupState(),
         queue: await requests.queueState(u.id), // the brainrot deposit in the queue (or being handled), if any
+        withdraw: await requests.withdrawState(u), // withdrawals open after the first top-ups (Stars or brainrots)
         modes: modes(),
         halloween: !!settings.get('halloween'),
         partner: await referrals.isPartner(u.id), // has a referral code of their own (the "Referrals" screen)
@@ -228,6 +229,7 @@ export function createApi(deps) {
       partner: await referrals.isPartner(req.user.id),
       topup: topupState(),
       queue: await requests.queueState(req.user.id),
+      withdraw: await requests.withdrawState(req.user),
       modes: modes(),
     })),
   );
