@@ -323,6 +323,14 @@ CREATE TABLE IF NOT EXISTS bs_invite_rewards (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS bs_invite_rewards_inviter_idx ON bs_invite_rewards (inviter_id, user_id);
+-- the referral page: a week's income is pending until Saturday (by created_at); invite_balance is no
+-- longer used (what was moved to the balance is in bs_balance_log, reason 'invites')
+CREATE INDEX IF NOT EXISTS bs_invite_rewards_time_idx ON bs_invite_rewards (inviter_id, created_at);
+-- the codes are typed in now (a partner promo code): capitals, like the new ones; an older code is made
+-- capital unless another code would then read the same
+UPDATE bs_users u SET invite_code = upper(u.invite_code)
+ WHERE u.invite_code IS NOT NULL AND u.invite_code <> upper(u.invite_code)
+   AND upper(u.invite_code) IN (SELECT upper(invite_code) FROM bs_users WHERE invite_code IS NOT NULL GROUP BY 1 HAVING count(*) = 1);
 
 -- Row level security with no policies: the app connects as the table owner
 -- (unaffected), while public APIs such as Supabase's Data API get no access.

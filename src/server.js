@@ -18,7 +18,7 @@ import { createCrash } from './crash.js';
 import { createDice } from './dice.js';
 import { createAutoPromo } from './autopromo.js';
 import { createReferrals, levelsOnce } from './referrals.js';
-import { createInvites } from './invites.js';
+import { createInvites, weeklyOnce } from './invites.js';
 import { GameError } from './game.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -66,6 +66,7 @@ export async function createServer(env = process.env, overrides = {}) {
   await addNickCaseOnce(db, settings).catch((e) => console.warn('[db] nick case:', e.message));
   await addShareCaseOnce(db, settings).catch((e) => console.warn('[db] share case:', e.message));
   await levelsOnce(db, settings).catch((e) => console.warn('[db] referral levels:', e.message));
+  await weeklyOnce(db, settings).catch((e) => console.warn('[db] invites weekly:', e.message));
   await marketPricesOnce(db, settings).catch((e) => console.warn('[db] market prices:', e.message));
 
   const holder = { bot: null, game: null };

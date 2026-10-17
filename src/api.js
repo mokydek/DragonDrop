@@ -162,7 +162,7 @@ export function createApi(deps) {
     limitLight,
     wrap(async (req) => {
       const u = req.user;
-      // opened by a friend's link (?startapp=inv_CODE): the friend gets a share of the player's top-ups
+      // opened by a friend's link (?startapp=CODE): the friend gets a share of the player's top-ups
       if (invites && req.startParam) await invites.bind(u, req.startParam).catch((e) => console.warn('[invites] bind failed:', e.message));
       return {
         me: meView(u),
@@ -234,10 +234,12 @@ export function createApi(deps) {
   // a partner's referral codes: level, stats and the players who came with them
   r.get('/referrals/mine', auth, limitLight, wrap(async (req) => referrals.mine(req.user.id)));
 
-  // ------------------------------------------------------------ invite friends
-  // the player's own link, the friends who came by it and what their top-ups brought; moving it to the balance
+  // ------------------------------------------------------------ invite friends (the referral page)
+  // the player's link and code, the pending income and the referral balance, the friends; moving the
+  // referral balance to the balance; a code of the player's own choice
   r.get('/invites', auth, limitLight, wrap(async (req) => invites.state(req.user)));
   r.post('/invites/claim', auth, limitActions, wrap(async (req) => invites.claim(req.user)));
+  r.post('/invites/code', auth, limitActions, wrap(async (req) => invites.setCode(req.user, (req.body || {}).code)));
   // the link sent from the app: a prepared message (picture, caption, a button with the link) or a share link
   r.post(
     '/invites/share',
@@ -348,19 +350,37 @@ export function createApi(deps) {
 
   r.post('/upgrade', auth, gate('upgrade', 'upgrade_closed'), limitActions, wrap(async (req) => game.upgrade(req.user, req.body || {})));
 
-  r.post('/promo', auth, limitActions, wrap(async (req) => game.redeemPromo(req.user.id, (req.body || {}).code)));
+  // a promo code of the admins, else a player's code (the friend who gave it gets a share of the top-ups)
+  r.post(
+    '/promo',
+    auth,
+    limitActions,
+    wrap(async (req) => {
+      const code = (req.body || {}).code;
+      try {
+        return await game.redeemPromo(req.user.id, code);
+      } catch (e) {
+        const friend = e instanceof GameError && e.code === 'promo_invalid' && invites ? await invites.useCode(req.user, code) : null;
+        if (!friend) throw e;
+        return { invite: friend.inviter, already: friend.already };
+      }
+    }),
+  );
 
   // ------------------------------------------------------------ auto promo code
   r.get('/auto-promo', auth, limitLight, wrap(async (req) => ({ autoPromo: await autoPromo.publicState(req.user) })));
 
   /**
    * The code typed in a top-up form: the auto promo code of this moment (its bonus comes with this
-   * top-up) or a referral code (ties the player to it the first time; a tied player keeps theirs).
+   * top-up), a player's partner promo code (that player becomes the friend who invited this one) or a
+   * referral code (ties the player to it the first time; a tied player keeps theirs).
    */
   async function topupCode(user, raw) {
     const promo = await autoPromo.match(user, raw);
     if (promo) return { promo, ref: user.ref_code || null };
     const code = normRef(raw);
+    // a player's partner promo code (their referral page): that player gets a share of the top-ups
+    if (code && invites && !(await referrals.exists(code)) && (await invites.useCode(user, raw))) return { promo: null, ref: user.ref_code || null };
     if (code && user.ref_code) {
       // already tied to a code: another referral code changes nothing, anything else is a mistake
       if (await referrals.exists(code)) return { promo: null, ref: user.ref_code };

@@ -140,7 +140,7 @@ a { color: inherit; }
   .q-card, .q-pill, .q-nick, .q-accept,
   .dc-chip, .toast, .pop, .summary, .req-acts, .req-box, .dep-row, .loot-row, .vh-price, .ref-code, .ref-own, .free-state, .buff,
   .input:not(textarea), .swatch, .count-seg button, .up-pcts button, [data-view='profile'] .stats, [data-view='refs'] .stats, [data-view='invite'] .stats,
-  .invite-wallet) {
+  .invite-wallet, .inv-box, .inv-pending) {
   --cut: 10px;
   --edge: var(--line);
   --fill: var(--panel);
@@ -1030,13 +1030,38 @@ select.input {
 .ref-own { --cut: 8px; --edge: var(--a1-line); --fill: var(--a1-faint); margin-top: 8px; padding: 10px 12px; font-size: 12.5px; font-weight: 700; line-height: 1.35; }
 .ref-players .row { padding: 9px 12px; }
 
-/* ---------------------------------------------------------------- invite friends: the link, sending it, what the friends brought */
-.invite-link { font: 700 13.5px/1.3 var(--font-text); letter-spacing: 0; text-align: left; }
-.invite-send { margin-top: 10px; }
-.invite-wallet { --cut: 12px; --edge: var(--a1-line); --fill: linear-gradient(90deg, var(--a1-soft), transparent 70%), var(--panel); display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; }
-.invite-sum { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
-.invite-sum small { font: 800 9.5px/1.25 var(--font-text); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+/* ---------------------------------------------------------------- invite friends (the referral page): the link, the partner
+   promo code, sending it, the income pending till Saturday, the referral balance, what the friends brought */
+.inv-field + .inv-field { margin-top: 12px; }
+.inv-lbl { margin: 0 2px 7px; font: 800 10px/1 var(--font-text); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.inv-box { --cut: 10px; --fill: rgba(0, 0, 0, 0.36); display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 6px 6px 6px 14px; }
+.inv-val { flex: 1; min-width: 0; padding: 8px 0; border: 0; background: none; color: var(--text); font: 700 14px/1.3 var(--font-text); text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.inv-code { font: 800 18px/1.1 var(--font-display); letter-spacing: 0.08em; }
+.inv-box .icon-btn { flex: none; --edge: var(--a1-line); --fill: var(--a1-faint); width: 38px; height: 38px; color: var(--a1); }
+.inv-box .icon-btn svg { width: 18px; height: 18px; }
+.inv-gives { margin: 12px 4px 0; font-size: 12.5px; font-weight: 700; line-height: 1.4; color: var(--muted); text-align: center; }
+.invite-send { margin-top: 12px; }
+.inv-pending {
+  --cut: 12px;
+  --edge: var(--a1-line);
+  --fill: linear-gradient(90deg, rgba(255, 170, 60, 0.3), rgba(255, 170, 60, 0.08) 75%), rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px 14px;
+}
+.inv-pending-lbl { font: 800 14px/1.25 var(--font-text); }
+.inv-pending-val { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
+.inv-pending-val .money b { font-size: 17px; font-weight: 700; }
+.inv-pending-val small { font-size: 11px; font-weight: 700; line-height: 1.3; color: var(--muted); }
+.invite-wallet { --cut: 12px; margin-top: 12px; padding: 13px 14px 14px; }
+.invite-wallet-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.invite-sum { min-width: 0; }
+.invite-sum .money b { font-size: 26px; font-weight: 700; }
 .invite-wallet .btn { flex: none; }
+.code-input { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
 .invite-friends .row { padding: 9px 12px; }
 .invite-earn { flex: none; display: inline-flex; align-items: center; gap: 2px; font: 700 13px/1 var(--font-display); color: var(--a1); }
 

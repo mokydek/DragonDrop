@@ -667,13 +667,15 @@ function itemSource(f) {
   }
 }
 
-/** The player card: who invited the player, the friends they brought by their link and what it gave. */
+/** The player card: who invited the player, the friends they brought (link or code) and what it gave: pending till Saturday, not moved yet. */
 function inviteRows(v) {
   if (!v) return '';
   return h`${v.inviter ? h`<div class="kv"><span>${C.t('a.invitedBy')}</span><a href="#/admin/users/${v.inviter.id}">${v.inviter.name}</a></div>` : ''}
     ${v.friends || v.earned
       ? h`<div class="kv"><span>${C.t('a.invites')}</span><b>${C.fmt(v.friends)}</b></div>
-        <div class="kv"><span>${C.t('a.invEarned')}</span><b>${C.money(v.earned, 12)}${v.balance > 0 ? h` <small>(${C.t('a.invNotMoved')} ${C.money(v.balance, 11)})</small>` : ''}</b></div>`
+        <div class="kv"><span>${C.t('a.invEarned')}</span><b>${C.money(v.earned, 12)}${v.pending > 0 || v.balance > 0
+          ? h` <small>(${v.pending > 0 ? h`${C.t('a.invPending')} ${C.money(v.pending, 11)}` : ''}${v.pending > 0 && v.balance > 0 ? ', ' : ''}${v.balance > 0 ? h`${C.t('a.invNotMoved')} ${C.money(v.balance, 11)}` : ''})</small>`
+          : ''}</b></div>`
       : ''}`;
 }
 
