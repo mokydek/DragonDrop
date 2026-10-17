@@ -47,6 +47,7 @@ const S = {
   categories: [],
   items: [],
   itemsById: new Map(),
+  withdraw: null, // can the player withdraw yet: { open, stars, brainrots, need: { stars, item } } (null: server doesn't say)
   withdrawIds: null, // brainrots that can be withdrawn; others are exchanged for one of them (null: server doesn't say)
   depositIds: null, // brainrots that can be picked in a deposit (null: server doesn't say — all)
   upgrade: { edge: 10, minChance: 1, maxChance: 80, luck: 1 },
@@ -2070,6 +2071,7 @@ async function refreshMe() {
     S.nick = { ...S.nick, ...r.nick };
     S.share = { ...S.share, ...r.share };
     if (r.topup) S.topup = r.topup;
+    if (r.withdraw) S.withdraw = r.withdraw;
     // the request closed meanwhile: its own state says how (done / declined)
     if (S.queue && !r.queue) queuePoll(0);
     else if (r.queue !== undefined) onQueue(r.queue);
@@ -2607,8 +2609,25 @@ async function cancelQueue() {
   }
 }
 
+/** Withdrawals open after the first top-ups: what opens them, what the player topped up, a button to top up. */
+function showWithdrawLocked() {
+  const w = S.withdraw || {};
+  const need = w.need || { stars: 100, item: null };
+  const item = need.item ? S.itemsById.get(need.item.id) || need.item : null;
+  const sheet = openModal(
+    html`<div class="confirm wd-lock">
+      <div class="sheet-title">${t('wdLockTitle')}</div>
+      <p>${item ? t('wdLockText', { stars: fmt(need.stars), item: item.name }) : t('wdLockStars', { stars: fmt(need.stars) })}</p>
+      <p class="wd-have">${t('wdLockHave', { stars: fmt(w.stars || 0) })} ${money(w.brainrots || 0, 13)}</p>
+      <div class="row2"><button class="btn ghost" data-act="close-modal">${t('cancel')}</button><button class="btn primary" id="wdTopup">${t('topup')}</button></div>
+    </div>`,
+  );
+  sheet.querySelector('#wdTopup').addEventListener('click', () => openTopup());
+}
+
 function openWithdraw() {
   if (!S.inventory.length) return;
+  if (S.withdraw && !S.withdraw.open) return showWithdrawLocked();
   const sel = new Set();
   let target = null; // brainrot chosen in exchange for the ones that can't be withdrawn
   const sheet = openModal(
@@ -2698,6 +2717,11 @@ function openWithdraw() {
       if (err.code === 'need_exchange') {
         if (typeof err.data.value === 'number') serverValue = err.data.value;
         return showSwap();
+      }
+      if (err.code === 'withdraw_locked') {
+        haptic.notify('error');
+        S.withdraw = { ...(S.withdraw || {}), open: false };
+        return showWithdrawLocked();
       }
       showError(err);
       if (err.code === 'items_missing') {
@@ -3136,6 +3160,7 @@ function applyBootstrap(b) {
   S.links = b.links || {};
   S.partner = !!b.partner;
   if (b.topup) S.topup = b.topup;
+  S.withdraw = b.withdraw || null;
   applyQueue(b.queue);
   if (b.modes) S.modes = { ...S.modes, ...b.modes };
   if (b.me.lang && b.me.lang !== lang() && !store.getItem('bs_lang')) setLang(b.me.lang);

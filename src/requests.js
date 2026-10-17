@@ -17,6 +17,10 @@ export const INVOICE_TTL_SEC = 24 * 3600; // older invoices are refused at check
 // The queue of brainrot deposits: an admin accepts the next request, the player then has this long to send
 // the trade to the admin's Roblox nick. Waiting in the queue = a brainrot deposit with status 'new'.
 export const TRADE_WINDOW_SEC = 5 * 60;
+// Withdrawals open after the player's top-ups reach either of these (in total): this many Stars, or
+// brainrots worth at least one WITHDRAW_MIN_ITEM (coins credited + brainrots given on brainrot deposits).
+export const WITHDRAW_MIN_STARS = 100;
+export const WITHDRAW_MIN_ITEM = 'garama and madundung';
 const QUEUED = "kind = 'deposit' AND method = 'brainrot' AND status = 'new'";
 // seconds left of the trade window of an accepted request (0 once it is over)
 const TRADE_LEFT = `CASE WHEN r.accepted_at IS NOT NULL THEN GREATEST(0, ceil(${TRADE_WINDOW_SEC} - extract(epoch FROM now() - r.accepted_at)))::int END`;
@@ -344,6 +348,26 @@ export function createRequests({ db, settings, game, tg, config, access, referra
   }
 
   /**
+   * Can the player withdraw yet: their top-ups so far (Stars paid, value of brainrot deposits credited)
+   * and what opens withdrawals. Admins can always withdraw.
+   */
+  async function withdrawState(user, q = db) {
+    const minItem = [...game.catalog.items.values()].find((i) => i.name.toLowerCase() === WITHDRAW_MIN_ITEM) || null;
+    const need = { stars: WITHDRAW_MIN_STARS, item: minItem ? { id: minItem.id, name: minItem.name, value: minItem.value } : null };
+    const { rows } = await q.query(
+      `SELECT coalesce(sum(stars) FILTER (WHERE method = 'stars' AND status = 'done'), 0)::bigint AS stars,
+              coalesce(sum(coins + (SELECT coalesce(sum((e->>'value')::bigint), 0) FROM jsonb_array_elements(items) e))
+                FILTER (WHERE method = 'brainrot'), 0)::bigint AS brainrots
+         FROM bs_requests WHERE user_id = $1 AND kind = 'deposit'`,
+      [user.id],
+    );
+    const stars = Number(rows[0].stars);
+    const brainrots = Number(rows[0].brainrots);
+    const open = !!user.is_admin || stars >= need.stars || (!!minItem && brainrots >= minItem.value);
+    return { open, stars, brainrots, need };
+  }
+
+  /**
    * Withdrawal of inventory brainrots. Only "withdrawable" ones leave as they are; the others
    * must be exchanged for one withdrawable brainrot (`exchangeTo`) worth no more than they are,
    * the difference goes to the balance.
@@ -351,6 +375,8 @@ export function createRequests({ db, settings, game, tg, config, access, referra
   async function createWithdraw(user, body = {}) {
     const nick = cleanNick(body.nick);
     const ids = parseIds(body.ids);
+    const wd = await withdrawState(user);
+    if (!wd.open) throw new GameError('withdraw_locked', 403, { stars: wd.need.stars, item: wd.need.item ? wd.need.item.name : '' });
     let target = null;
     if (body.exchangeTo !== undefined && body.exchangeTo !== null) {
       target = game.catalog.items.get(Number(body.exchangeTo));
@@ -734,6 +760,7 @@ export function createRequests({ db, settings, game, tg, config, access, referra
   return {
     createDeposit,
     createWithdraw,
+    withdrawState,
     starsInvoice,
     invoiceStatus,
     preCheckout,

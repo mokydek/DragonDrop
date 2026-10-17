@@ -80,6 +80,7 @@ export async function startDemo({ dbName = 'bs_t_ui', env = {}, rng } = {}) {
     return (await ctx.db.one("INSERT INTO bs_inventory (user_id, item_id, source) VALUES ($1, $2, 'demo') RETURNING id", [u.id, it.id])).id;
   };
   const wIds = [await giveTo(danya, 'Dragon Cannelloni'), await giveTo(danya, 'Cerberus'), await giveTo(danya, 'Garama and Madundung')];
+  await app.paidStars(danya.id);
   await app.post('/api/requests/withdraw', { user: danya, body: { nick: 'DanyaPro', ids: wIds } });
   await app.post('/api/topup/stars', { user: OTHERS[5], body: { stars: 250 } });
   await app.sendUpdate({
