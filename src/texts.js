@@ -50,6 +50,9 @@ export const TEXTS = {
       default: '❌ Не получилось активировать промокод, попробуй позже.',
     },
     friendCodeOk: (name) => `✅ Код друга принят: ${name}`,
+    giveawayWon: (kind, id, name, value) =>
+      `🎉 Ты выиграл ${kind === 'week' ? 'еженедельный' : 'ежедневный'} розыгрыш #${id}!\n\nПриз: ${name} (${fmt(value, 'ru')} 🪙) — уже в твоём инвентаре.`,
+    btnInventory: '🎒 Открыть инвентарь',
     adminOk: '✅ Готово, теперь ты админ. Админ-панель — во вкладке «Админ» в приложении.',
     adminBad: '❌ Неверный код.',
     banned: '⛔ Доступ к боту ограничен.',
@@ -132,6 +135,9 @@ export const TEXTS = {
       default: '❌ Не вдалося активувати промокод, спробуй пізніше.',
     },
     friendCodeOk: (name) => `✅ Код друга прийнято: ${name}`,
+    giveawayWon: (kind, id, name, value) =>
+      `🎉 Ти виграв ${kind === 'week' ? 'щотижневий' : 'щоденний'} розіграш #${id}!\n\nПриз: ${name} (${fmt(value, 'uk')} 🪙) — вже у твоєму інвентарі.`,
+    btnInventory: '🎒 Відкрити інвентар',
     adminOk: '✅ Готово, тепер ти адмін. Адмін-панель — у вкладці «Адмін» у застосунку.',
     adminBad: '❌ Невірний код.',
     banned: '⛔ Доступ до бота обмежено.',
@@ -213,6 +219,9 @@ export const TEXTS = {
       default: '❌ Could not activate the promo code, try again later.',
     },
     friendCodeOk: (name) => `✅ Friend's code accepted: ${name}`,
+    giveawayWon: (kind, id, name, value) =>
+      `🎉 You won the ${kind === 'week' ? 'weekly' : 'daily'} giveaway #${id}!\n\nPrize: ${name} (${fmt(value, 'en')} 🪙) — it's already in your inventory.`,
+    btnInventory: '🎒 Open inventory',
     adminOk: '✅ Done, you are an admin now. The admin panel is in the «Admin» tab of the app.',
     adminBad: '❌ Wrong code.',
     banned: '⛔ Access to the bot is restricted.',

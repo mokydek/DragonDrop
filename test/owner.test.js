@@ -282,7 +282,7 @@ test('the main admin chooses what the other admins see: sections, requests by ki
   const p = users.alice;
   await app.post('/api/bootstrap', { user: p });
   for (const u of [owner, admin, p]) await app.message(u, '/start'); // so the bot can write to them
-  const ALL = ['overview', 'deposits_brainrots', 'deposits_stars', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'settings', 'broadcast'];
+  const ALL = ['overview', 'deposits_brainrots', 'deposits_stars', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'giveaways', 'settings', 'broadcast'];
   const sectionsOf = async (u) => (await app.post('/api/bootstrap', { user: u })).body.adminSections;
   assert.deepEqual(await sectionsOf(admin), ALL, 'everything by default');
   assert.deepEqual(await sectionsOf(owner), ALL);
@@ -301,7 +301,7 @@ test('the main admin chooses what the other admins see: sections, requests by ki
     return r.body.settings.admin_hidden;
   };
   assert.deepEqual(await set(['settings', 'cases', 'withdrawals', 'deposits_stars', 'cases']), ['deposits_stars', 'withdrawals', 'cases', 'settings']);
-  assert.deepEqual(await sectionsOf(admin), ['overview', 'deposits_brainrots', 'items', 'users', 'referrals', 'promos', 'broadcast']);
+  assert.deepEqual(await sectionsOf(admin), ['overview', 'deposits_brainrots', 'items', 'users', 'referrals', 'promos', 'giveaways', 'broadcast']);
   assert.deepEqual(await sectionsOf(owner), ALL, 'the main admin always sees everything');
 
   // hidden sections are refused by the server, the rest works

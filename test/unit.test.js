@@ -209,7 +209,9 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
     ...['low', 'top', 'high', 'mid', 'base'].flatMap((k) => ['buffs.t.' + k, 'buffs.s.' + k]),
     ...['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'secret'].map((k) => 'r.' + k),
     ...['sunset', 'graphite', 'mint', 'redblue', 'violet', 'ocean'].map((k) => 'theme.' + k),
-    ...['overview', 'deposits', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'settings', 'broadcast'].map((k) => 'a.' + k),
+    ...['overview', 'deposits', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'giveaways', 'settings', 'broadcast'].map((k) => 'a.' + k),
+    ...['day', 'week'].flatMap((k) => ['gw.' + k, 'gw.' + k + 'Short', 'a.gw.' + k]),
+    ...['what', 'join', 'win'].flatMap((k) => ['gwR.' + k, 'gwR.' + k + 'H']),
     'e.bad_ref',
     'a.e.ref_exists',
     'a.e.partner_not_found',
@@ -232,6 +234,11 @@ test('UI texts: RU/UK/EN have the same keys and every key used in the app exists
   const admin = rf(new URL('../src/admin.js', import.meta.url), 'utf8');
   const adminCodes = new Set([...admin.matchAll(/GameError\('([a-z_]+)'/g)].map((m) => m[1]));
   for (const c of adminCodes) if (!['not_found', 'forbidden'].includes(c)) assert.ok('a.e.' + c in DICTS.ru, `no admin message for ${c}`);
+  // giveaways: the player's errors have a message, the admin panel's (bad_field) an admin message
+  const gw = rf(new URL('../src/giveaways.js', import.meta.url), 'utf8');
+  const gwCodes = new Set([...gw.matchAll(/GameError\('([a-z_]+)'/g)].map((m) => m[1]));
+  assert.ok(['giveaway_topup', 'giveaway_over', 'giveaway_admin'].every((c) => gwCodes.has(c)));
+  for (const c of gwCodes) if (c !== 'not_found') assert.ok((c === 'bad_field' ? 'a.e.' : 'e.') + c in DICTS.ru, `no message for ${c}`);
 
   // deposits / withdrawals: player errors have a message, admin-only errors an admin message
   const req = rf(new URL('../src/requests.js', import.meta.url), 'utf8');

@@ -140,7 +140,7 @@ a { color: inherit; }
   .q-card, .q-pill, .q-nick, .q-accept,
   .dc-chip, .toast, .pop, .summary, .req-acts, .req-box, .dep-row, .loot-row, .vh-price, .ref-code, .ref-own, .free-state, .buff,
   .input:not(textarea), .swatch, .count-seg button, .up-pcts button, [data-view='profile'] .stats, [data-view='refs'] .stats, [data-view='invite'] .stats,
-  .invite-wallet, .inv-box, .inv-pending) {
+  .invite-wallet, .inv-box, .inv-pending, .gw-tile, .gw-card, .gw-win) {
   --cut: 10px;
   --edge: var(--line);
   --fill: var(--panel);
@@ -1063,6 +1063,93 @@ select.input {
 .invite-wallet .btn { flex: none; }
 .code-input { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
 .invite-friends .row { padding: 9px 12px; }
+
+/* ---------------------------------------------------------------- giveaways (like on Case Battle): two tiles on
+   the cases screen (the prize, the time left); on the page a card for each — the prize, from what top-up, the
+   timer and its bar, «Участвовать», the last winners */
+.gw-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.gw-tile {
+  --cut: 12px;
+  --edge: var(--rcl);
+  --fill: radial-gradient(80% 58% at 50% 44%, var(--rca), transparent 72%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.32));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 11px 10px 10px;
+  border: 0;
+  color: var(--text);
+  text-align: center;
+  font: inherit;
+  transition: transform 0.15s;
+}
+.gw-tile:active { transform: scale(0.97); }
+.gw-kind { align-self: stretch; color: var(--a1); font: 800 9.5px/1 var(--font-text); letter-spacing: 0.12em; text-transform: uppercase; }
+.gw-art { height: 76px; margin: 8px 0 7px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.5)); }
+.gw-art .art-img { width: 76px; height: 76px; object-fit: contain; }
+.gw-art .emo { font-size: 50px; }
+.gw-name { width: 100%; font: 800 11.5px/1.2 var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-foot { width: 100%; margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px 10px; }
+.gw-foot .money b { font-size: 12px; }
+.gw-left { color: var(--muted); font: 700 11px/1 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.gw-rules-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 8px 0 8px 4px; border: 0; background: none; color: var(--a1); font: 800 11.5px/1 var(--font-text); cursor: pointer; }
+.gw-rules-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gw-card {
+  --cut: 14px;
+  --edge: var(--rcl);
+  --fill: radial-gradient(52% 62% at 86% 52%, var(--rca), transparent 72%), linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.32));
+  margin-bottom: 14px;
+  padding: 0 14px 14px;
+}
+.gw-top { display: flex; align-items: center; gap: 8px; margin: 0 -14px 12px; padding: 12px 16px; background: linear-gradient(90deg, var(--rca), transparent 85%); box-shadow: inset 0 -1px 0 var(--line); }
+.gw-no { color: var(--muted); font: 600 11px/1 var(--font-display); }
+.gw-ttl { flex: 1; min-width: 0; font: 800 13px/1.2 var(--font-text); }
+.gw-top .money b { font-size: 13px; }
+.gw-body { display: grid; grid-template-columns: minmax(0, 1fr) 108px; gap: 10px; align-items: center; }
+.gw-prize { margin-bottom: 9px; font: 800 16px/1.2 var(--font-display); word-break: break-word; }
+.gw-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.gw-line > b { color: var(--a1); font: 700 12.5px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.gw-line .money b { color: var(--a1); font-size: 12.5px; }
+.gw-bar { height: 5px; margin-top: 12px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.gw-bar i { display: block; height: 100%; background: var(--grad); transition: width 1s linear; }
+.gw-pic { display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.55)); }
+.gw-pic .art-img { width: 108px; height: 108px; object-fit: contain; }
+.gw-pic .emo { font-size: 72px; }
+.gw-btn { width: 100%; height: 46px; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; font: 800 13px/1 var(--font-display); letter-spacing: 0.05em; text-transform: uppercase; }
+.gw-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.gw-btn.joined:disabled { --edge: rgba(74, 222, 128, 0.45); --fill: rgba(34, 197, 94, 0.12); color: #4ade80; opacity: 1; }
+.gw-wins { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.gw-wins-h { display: flex; align-items: center; justify-content: center; gap: 7px; margin-bottom: 10px; color: var(--a1); font: 800 12px/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; }
+.gw-wins-h svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gw-win {
+  --cut: 8px;
+  --fill: rgba(0, 0, 0, 0.3);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'ava who when' 'what what val';
+  align-items: center;
+  column-gap: 9px;
+  row-gap: 8px;
+  padding: 10px 12px;
+}
+.gw-win + .gw-win { margin-top: 6px; }
+.gw-ava { grid-area: ava; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--panel2); font: 800 12px/1 var(--font-display); }
+.gw-who { grid-area: who; min-width: 0; font: 700 13px/1.2 var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-when { grid-area: when; color: var(--muted); font: 600 11px/1 var(--font-display); white-space: nowrap; }
+.gw-when b { color: var(--text); }
+.gw-what { grid-area: what; min-width: 0; color: var(--a1); font: 700 12.5px/1.2 var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-win > .money { grid-area: val; justify-self: end; }
+.gw-win > .money b { font-size: 12px; }
+/* «Участвовать» before the sum is reached: how much is left, the top-up */
+.gw-need { text-align: center; }
+.gw-need-sum { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 2px 0 12px; }
+.gw-need-sum .money b { font-size: 26px; }
+.gw-need-sum small { color: var(--muted); font: 700 13px/1 var(--font-display); }
+.gw-need-note { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.gw-rh { margin: 16px 0 6px; color: var(--a1); font: 800 11.5px/1 var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; }
+.gw-rules .sheet-title + .gw-rh { margin-top: 0; }
+.gw-rp { margin: 0; font-size: 13.5px; line-height: 1.45; }
 .invite-earn { flex: none; display: inline-flex; align-items: center; gap: 2px; font: 700 13px/1 var(--font-display); color: var(--a1); }
 
 /* ---------------------------------------------------------------- rocket (crash): a chart */
@@ -1435,6 +1522,22 @@ select.input {
 .note.ok { color: #6ef0a0; }
 .note.bad { color: #ff9a9a; }
 .promo-row.dim { opacity: 0.55; }
+/* admin: giveaways — every day / every week, each with its settings, the one running now and the past ones */
+.gw-adm { grid-template-columns: minmax(0, 1fr); }
+.gw-adm + .gw-adm { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.gw-adm-head { justify-content: space-between; }
+.gw-adm-head .switch { font-size: 13px; }
+.gw-adm-prize { display: flex; align-items: center; gap: 8px; }
+.gw-adm-lbl { flex: none; color: var(--muted); font-size: 12px; font-weight: 700; }
+.gw-adm-it { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.gw-adm-it .row-art { width: 36px; }
+.gw-adm-it > b { min-width: 0; font-size: 13.5px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-adm-it > .money { flex: none; }
+.gw-adm-prize .btn { flex: none; }
+.gw-adm-stars { color: var(--muted); font-weight: 600; }
+.gw-adm-now > svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gw-adm .row.dim { opacity: 0.55; }
+.gw-adm-ent { margin-top: -4px; }
 .promo-row a.row-main { color: inherit; text-decoration: none; }
 .ref-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
 .ref-stats > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }

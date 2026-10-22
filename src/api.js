@@ -102,7 +102,7 @@ export function meView(u) {
 }
 
 export function createApi(deps) {
-  const { config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites } = deps;
+  const { config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites, giveaways } = deps;
   // admins: which admin panel sections they see (the main admin decides for the others)
   const adminPart = (u) => (u.is_admin ? { adminSections: access.sections(u.id) } : {});
   const r = express.Router();
@@ -176,6 +176,7 @@ export function createApi(deps) {
         crash: crash.publicConfig(),
         dice: dice.publicConfig(),
         autoPromo: await autoPromo.publicState(u),
+        giveaways: giveaways ? await giveaways.brief() : [], // the giveaways running now (the cases screen)
         free: game.freeState(u),
         nick: game.nickState(u),
         share: game.shareState(u),
@@ -262,6 +263,13 @@ export function createApi(deps) {
       return { preparedId, url: tg.shareFallbackUrl(req.user.lang, opts) };
     }),
   );
+
+  // ------------------------------------------------------------ giveaways
+  // every day / every week a brainrot among the players who joined; joining needs a top-up of at least
+  // the minimum while the giveaway runs (the error says how much is left)
+  r.get('/giveaways', auth, limitLight, wrap(async (req) => giveaways.list(req.user)));
+  r.post('/giveaways/:id/join', auth, limitActions, wrap(async (req) => giveaways.join(req.user, req.params.id)));
+
   r.get('/inventory', auth, limitLight, wrap(async (req) => ({ inventory: await game.inventory(req.user.id) })));
   r.get(
     '/catalog',

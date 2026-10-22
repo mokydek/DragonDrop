@@ -48,7 +48,7 @@ function imageData(v) {
   return v;
 }
 
-export function createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, broadcaster }) {
+export function createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, giveaways, broadcaster }) {
   const r = express.Router();
   r.use((req, res, next) => (req.user && req.user.is_admin ? next() : res.status(403).json({ error: 'forbidden' })));
 
@@ -63,6 +63,7 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
     [/^\/users(\/|$)/i, 'users'],
     [/^\/referrals(\/|$)/i, 'referrals'],
     [/^\/promos(\/|$)/i, 'promos'],
+    [/^\/giveaways(\/|$)/i, 'giveaways'],
     [/^\/(settings|check-channel)(\/|$)/i, 'settings'],
     [/^\/broadcast(\/|$)/i, 'broadcast'],
   ];
@@ -477,11 +478,12 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
     const rows = await db.many(
       `SELECT v.id, v.item_id, v.created_at, v.source, v.case_id, v.ref_id,
               c.name_ru, c.name_uk, c.name_en, up.chance, up.bet_value,
-              a.id AS admin_id, a.first_name AS admin_first, a.username AS admin_username
+              a.id AS admin_id, a.first_name AS admin_first, a.username AS admin_username, gw.kind AS gw_kind
          FROM bs_inventory v
          LEFT JOIN bs_cases c ON c.id = v.case_id
          LEFT JOIN bs_upgrades up ON v.source = 'upgrade' AND up.id = v.ref_id
          LEFT JOIN bs_users a ON v.source = 'admin' AND a.id = v.ref_id
+         LEFT JOIN bs_giveaways gw ON v.source = 'giveaway' AND gw.id = v.ref_id
         WHERE v.user_id = $1 ORDER BY v.id DESC LIMIT 1000`,
       [userId],
     );
@@ -494,6 +496,7 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
       if (r.source === 'upgrade' && r.chance !== null) from.upgrade = { chance: Number(r.chance), bet: Number(r.bet_value) };
       if ((r.source === 'deposit' || r.source === 'refund') && r.ref_id) from.requestId = Number(r.ref_id);
       if (r.source === 'admin' && r.admin_id) from.admin = { id: Number(r.admin_id), name: displayName({ id: r.admin_id, first_name: r.admin_first, username: r.admin_username }) };
+      if (r.source === 'giveaway' && r.ref_id) from.giveaway = { id: Number(r.ref_id), kind: r.gw_kind || null };
       out.push({ invId: Number(r.id), at: r.created_at, item: game.publicItem(item), from });
     }
     return out;
@@ -694,6 +697,20 @@ export function createAdmin({ db, settings, game, live, tg, users, requests, acc
       return { ok: true };
     }),
   );
+
+  // ------------------------------------------------------------ giveaways
+  // every day / every week: the settings of each kind, the giveaway running now and the last ones drawn;
+  // the main admin switches a kind on / off and sets its brainrot and the minimum top-up
+  r.get('/giveaways', wrap(async (req) => ({ ...(await giveaways.adminView()), canEdit: isMain(req.user) })));
+  r.put(
+    '/giveaways/:kind',
+    wrap(async (req) => {
+      if (!isMain(req.user)) throw new GameError('forbidden', 403);
+      return { ...(await giveaways.setPlan(String(req.params.kind), req.body)), canEdit: true };
+    }),
+  );
+  // who joined a giveaway
+  r.get('/giveaways/:id/entries', wrap(async (req) => giveaways.entries(int(Number(req.params.id), 1, Number.MAX_SAFE_INTEGER, 'id'))));
 
   // ------------------------------------------------------------ settings
   // the Stars rate, the upgrader luck, what the other admins see, whether Stars count for referral
