@@ -2107,7 +2107,7 @@ test('admin: edit a case price from the panel and players see it', { skip }, asy
   await page.click('#caseForm button[type=submit]');
   await page.waitForSelector('.toast.ok');
   // every admin section renders
-  for (const s of ['overview', 'deposits', 'withdrawals', 'items', 'users', 'promos', 'settings', 'broadcast']) {
+  for (const s of ['overview', 'deposits', 'withdrawals', 'items', 'users', 'promos', 'giveaways', 'settings', 'broadcast']) {
     await page.evaluate((x) => (location.hash = '#/admin/' + x), s);
     await page.waitForSelector('#admBody > :not(.spinner)');
   }
@@ -2592,7 +2592,7 @@ test('main admin: switches off sections for the other admins; they lose those ta
     await page.waitForSelector('#reqList .req-row, #reqList .empty-box');
     return page.$$eval('#reqList .req-row', (els) => els.map((e) => e.textContent));
   };
-  const ALL_TABS = ['Обзор', 'Пополнения', 'Выводы', 'Кейсы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Настройки', 'Рассылка'];
+  const ALL_TABS = ['Обзор', 'Пополнения', 'Выводы', 'Кейсы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Розыгрыши', 'Настройки', 'Рассылка'];
   // a regular admin sees everything and has no such switches
   {
     const { page, errors } = await open({ path: '/#/admin/settings' });
@@ -2608,9 +2608,9 @@ test('main admin: switches off sections for the other admins; they lose those ta
     const { page, errors } = await open({ user: boss, path: '/#/admin/settings' });
     await page.waitForSelector('#setForm [data-sec]', { state: 'attached' });
     const labels = await page.$$eval('#setForm label:has([data-sec])', (els) => els.map((e) => e.textContent.trim()));
-    assert.deepEqual(labels, ['Обзор', 'Пополнения брейнротами', 'Пополнения звёздами', 'Выводы', 'Кейсы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Настройки', 'Рассылка']);
+    assert.deepEqual(labels, ['Обзор', 'Пополнения брейнротами', 'Пополнения звёздами', 'Выводы', 'Кейсы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Розыгрыши', 'Настройки', 'Рассылка']);
     assert.ok((await page.textContent('#setForm')).includes('Что видят обычные админы'));
-    assert.equal(await page.locator('[data-sec]:checked').count(), 11, 'all on by default');
+    assert.equal(await page.locator('[data-sec]:checked').count(), 12, 'all on by default');
     for (const x of ['cases', 'deposits_stars', 'broadcast']) await page.click(`label:has([data-sec="${x}"])`);
     await page.click('#setForm button[type=submit]');
     await page.waitForSelector('.toast.ok');
@@ -2632,7 +2632,7 @@ test('main admin: switches off sections for the other admins; they lose those ta
   {
     const { page, errors } = await open({ path: `/#/admin/cases/${demo.bySlug.noob.id}` });
     await page.waitForSelector('.adm-tabs .chip.on');
-    assert.deepEqual(await chips(page), ['Обзор', 'Пополнения', 'Выводы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Настройки']);
+    assert.deepEqual(await chips(page), ['Обзор', 'Пополнения', 'Выводы', 'Предметы', 'Игроки', 'Рефералы', 'Промо', 'Розыгрыши', 'Настройки']);
     assert.equal(await page.textContent('.adm-tabs .chip.on'), 'Обзор');
     await page.waitForSelector('.adm-stats');
     // deposits: brainrot requests only, no Stars payments
@@ -3566,6 +3566,136 @@ test('colour dice on brainrots: the staked ones leave the inventory; a win gives
   await page.context().close();
 });
 
+test('giveaways (like on Case Battle): two tiles on the cases screen; the page — prize, condition, timer, «Участвовать» says what is left and opens the top-up, then joins; the winner under it; the main admin changes the weekly one', { skip }, async () => {
+  const lena = { id: 7601, first_name: 'Лена', language_code: 'ru' };
+  const gosha = { id: 7602, first_name: 'Гоша', language_code: 'ru' };
+  const boss = { id: 7001, first_name: 'Босс', username: 'owner_ui', language_code: 'ru' };
+  for (const u of [lena, gosha, boss]) await demo.app.post('/api/bootstrap', { user: u });
+  // a daily giveaway won by Гоша: he topped up 100 and joined, the time ran out
+  const first = await demo.ctx.db.one("SELECT id FROM bs_giveaways WHERE kind = 'day' AND status = 'open'");
+  await payStars(gosha, 100);
+  assert.equal((await demo.app.post(`/api/giveaways/${first.id}/join`, { user: gosha })).status, 200);
+  await demo.ctx.db.query("UPDATE bs_giveaways SET ends_at = now() - interval '1 second' WHERE id = $1", [first.id]);
+  await demo.ctx.giveaways.tick();
+
+  const { page, errors } = await open({ user: lena, path: '/#/cases' });
+  await page.waitForSelector('.gw-tile');
+  // the cases screen: under the FREE case, the daily and the weekly one — the prize and the time left
+  assert.equal(await page.evaluate(() => document.querySelector('.free-card').compareDocumentPosition(document.querySelector('#gwStrip')) & Node.DOCUMENT_POSITION_FOLLOWING), 4);
+  assert.equal(await page.textContent('#gwStrip .sec-title'), 'Розыгрыши');
+  const tiles = await page.$$eval('.gw-tile', (els) => els.map((e) => [e.querySelector('.gw-kind').textContent, e.querySelector('.gw-name').textContent, e.querySelector('.money').textContent.replace(/\D/g, ''), e.querySelector('.gw-left').textContent]));
+  assert.deepEqual(tiles.map((x) => x.slice(0, 3)), [['Каждый день', 'Garama and Madundung', '175'], ['Каждую неделю', 'Dragon Cannelloni', '1200']]);
+  assert.match(tiles[0][3], /^23:59:\d\d$/);
+  assert.match(tiles[1][3], /^6 д 23:\d\d:\d\d$/);
+  // the page
+  await page.click('.gw-tile');
+  await page.waitForSelector('.gw-card');
+  assert.equal(await page.evaluate(() => location.hash), '#/giveaways');
+  assert.equal(await page.textContent('.vh-title'), 'Розыгрыши');
+  const day = page.locator('.gw-card').first();
+  const dayId = (await demo.ctx.db.one("SELECT id FROM bs_giveaways WHERE kind = 'day' AND status = 'open'")).id;
+  assert.equal(await day.locator('.gw-no').textContent(), `#${dayId}`);
+  assert.equal(await day.locator('.gw-ttl').textContent(), 'Розыгрыш каждый день');
+  assert.equal(await day.locator('.gw-prize').textContent(), 'Garama and Madundung');
+  assert.equal((await day.locator('.gw-line').first().textContent()).replace(/\s+/g, ' ').trim(), 'При пополнении от: 100');
+  assert.match((await day.locator('.gw-line').nth(1).textContent()).replace(/\s+/g, ' ').trim(), /^Осталось: 23:59:\d\d$/);
+  assert.equal(await day.locator('.gw-bar i').count(), 1);
+  assert.equal((await day.locator('.gw-btn').textContent()).trim(), 'Участвовать');
+  // the last winner under it
+  assert.equal(await day.locator('.gw-wins-h').textContent(), 'Победители');
+  assert.deepEqual(
+    [await day.locator('.gw-who').first().textContent(), await day.locator('.gw-what').first().textContent(), (await day.locator('.gw-when b').first().textContent())],
+    ['Гоша', 'Garama and Madundung', `#${first.id}`],
+  );
+  assert.equal(await page.locator('.gw-card').nth(1).locator('.gw-ttl').textContent(), 'Розыгрыш каждую неделю');
+  assert.equal(await page.locator('.gw-card').nth(1).locator('.gw-wins').count(), 0, 'nobody won a weekly one yet');
+  // «Участвовать» before the top-up: how much is left; «Пополнить» opens the top-up
+  await day.locator('.gw-btn').click();
+  await page.waitForSelector('.gw-need');
+  assert.equal(await page.textContent('.gw-need .sheet-title'), 'Осталось пополнить');
+  assert.equal(num(await page.textContent('.gw-need-sum .money')), 100);
+  assert.equal(await page.textContent('.gw-need-sum small'), '≈ 50 ⭐');
+  await page.click('.gw-need [data-act="gw-topup"]');
+  await page.waitForSelector('#topup [data-act="tu-stars"]');
+  await page.click('.modal-backdrop', { position: { x: 10, y: 10 } });
+  await page.waitForTimeout(300);
+  // 60 so far: 40 left
+  await payStars(lena, 60);
+  await day.locator('.gw-btn').click();
+  await page.waitForSelector('.gw-need');
+  assert.equal(num(await page.textContent('.gw-need-sum .money')), 40);
+  assert.equal(await page.textContent('.gw-need-sum small'), '≈ 20 ⭐');
+  await page.click('.modal-backdrop', { position: { x: 10, y: 10 } });
+  await page.waitForTimeout(300);
+  // 100: she is in
+  await payStars(lena, 40);
+  await day.locator('.gw-btn').click();
+  await page.waitForSelector('.gw-btn.joined');
+  assert.equal(await page.textContent('.toast.ok'), 'Ты участвуешь в розыгрыше!');
+  assert.equal((await page.locator('.gw-card').first().locator('.gw-btn').textContent()).trim(), 'Ты участвуешь');
+  assert.equal(await page.locator('.gw-card').first().locator('.gw-btn').isDisabled(), true);
+  assert.deepEqual((await demo.app.get(`/api/admin/giveaways/${dayId}/entries`, { user: boss })).body.entries.map((e) => e.name), ['Лена']);
+  // the rules
+  await page.click('[data-act="gw-rules"]');
+  await page.waitForSelector('.gw-rules');
+  assert.deepEqual(await page.$$eval('.gw-rules .gw-rh', (els) => els.map((e) => e.textContent)), ['Что это', 'Участвуй', 'Побеждай']);
+  await page.click('.modal-backdrop', { position: { x: 10, y: 10 } });
+  // small phones: the tiles and the cards fit
+  for (const width of [360, 320]) {
+    await page.setViewportSize({ width, height: 740 });
+    for (const h of ['#/cases', '#/giveaways']) {
+      await page.evaluate((x) => (location.hash = x), h);
+      await page.waitForSelector(h === '#/cases' ? '.gw-tile' : '.gw-card');
+      await page.waitForTimeout(300);
+      const over = await page.evaluate(() => Math.max(document.documentElement.scrollWidth - innerWidth, ...[...document.querySelectorAll('.gw-tile *, .gw-card *')].map((e) => Math.ceil(e.getBoundingClientRect().right - e.closest('.gw-tile, .gw-card').getBoundingClientRect().right))));
+      assert.ok(over <= 0, `${h} at ${width}px overflows by ${over}px`);
+    }
+  }
+  assert.deepEqual(errors, []);
+  await page.context().close();
+
+  // a regular admin only looks
+  {
+    const { page: a, errors: e2 } = await open({ user: ME, path: '/#/admin/giveaways' });
+    await a.waitForSelector('.gw-adm');
+    assert.equal(await a.locator('.gw-adm').count(), 2);
+    assert.equal(await a.locator('[data-gw-save]').count(), 0);
+    assert.deepEqual(await a.$$eval('.gw-adm-head', (els) => els.map((e) => [...e.children].map((c) => c.textContent.trim()))), [['Каждый день', 'Включён'], ['Каждую неделю', 'Включён']]);
+    assert.deepEqual(e2, []);
+    await a.context().close();
+  }
+  // the main admin: the weekly one — another brainrot and 300 coins (≈ 150 ⭐); nobody joined it, so at once
+  const { page: b, errors: e3 } = await open({ user: boss, path: '/#/admin/giveaways' });
+  await b.waitForSelector('[data-gw-save="week"]');
+  const week = b.locator('.gw-adm[data-kind="week"]');
+  assert.equal(await week.locator('.gw-adm-it > b').textContent(), 'Dragon Cannelloni');
+  await week.locator('[name=min]').fill('300');
+  assert.equal(await week.locator('.gw-adm-stars').textContent(), '≈ 150 ⭐');
+  await week.locator('[data-gw-pick]').click();
+  await b.waitForSelector('#pickSearch');
+  await b.fill('#pickSearch', 'garama');
+  await b.click('#pickList [data-pick]');
+  assert.equal(await week.locator('.gw-adm-it > b').textContent(), 'Garama and Madundung');
+  await week.locator('[data-gw-save]').click();
+  await b.waitForSelector('.toast.ok');
+  assert.equal(await b.textContent('.toast.ok'), 'Сохранено');
+  await b.waitForFunction(() => document.querySelector('.gw-adm[data-kind="week"] .gw-adm-now b')?.textContent.includes('Garama'));
+  // the daily one: Лена is in it, Гоша's win is in the past ones
+  const dayAdm = b.locator('.gw-adm[data-kind="day"]');
+  assert.match(await dayAdm.locator('.gw-adm-now small').textContent(), /участников: 1/);
+  assert.match(await dayAdm.locator('.list .row').first().textContent(), /Гоша/);
+  await dayAdm.locator('.gw-adm-now').click();
+  await b.waitForSelector(`#gwEnt${dayId} .row`);
+  assert.match(await b.textContent(`#gwEnt${dayId}`), /Лена/);
+  assert.deepEqual(e3, []);
+  await b.context().close();
+  const w = (await demo.app.get('/api/giveaways', { user: lena })).body.giveaways.find((x) => x.kind === 'week');
+  assert.deepEqual([w.item.name, w.min], ['Garama and Madundung', 300]);
+  // back as it was for the other tests
+  const dragon = [...demo.ctx.game.catalog.items.values()].find((i) => i.name === 'Dragon Cannelloni');
+  assert.equal((await demo.app.put('/api/admin/giveaways/week', { user: boss, body: { active: true, itemId: dragon.id, min: 500 } })).status, 200);
+});
+
 test('small phones (360px): no horizontal scrolling anywhere', { skip }, async () => {
   // the biggest possible top drop must still fit its card
   const top = [...demo.ctx.game.catalog.items.values()].find((i) => i.name === 'Strawberry Elephant');
@@ -3582,7 +3712,7 @@ test('small phones (360px): no horizontal scrolling anywhere', { skip }, async (
   assert.ok(fits, 'top drop value fits inside the card');
   const reqIds = await demo.ctx.db.many('SELECT id, kind FROM bs_requests ORDER BY id');
   const reqHashes = reqIds.map((r) => `#/admin/${r.kind === 'deposit' ? 'deposits' : 'withdrawals'}/${r.id}`);
-  for (const h of ['#/cases', `#/case/${demo.bySlug.dragon.id}`, `#/case/${demo.bySlug.free.id}`, '#/upgrade', '#/dice', '#/profile', '#/admin/cases', `#/admin/cases/${demo.bySlug.noob.id}`, '#/admin/users', '#/admin/settings', '#/admin/deposits', '#/admin/withdrawals', ...reqHashes]) {
+  for (const h of ['#/cases', `#/case/${demo.bySlug.dragon.id}`, `#/case/${demo.bySlug.free.id}`, '#/upgrade', '#/dice', '#/profile', '#/admin/cases', `#/admin/cases/${demo.bySlug.noob.id}`, '#/admin/users', '#/admin/settings', '#/admin/deposits', '#/admin/withdrawals', '#/giveaways', '#/admin/giveaways', ...reqHashes]) {
     await page.evaluate((x) => (location.hash = x), h);
     await page.waitForTimeout(500);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
