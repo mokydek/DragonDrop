@@ -332,6 +332,49 @@ UPDATE bs_users u SET invite_code = upper(u.invite_code)
  WHERE u.invite_code IS NOT NULL AND u.invite_code <> upper(u.invite_code)
    AND upper(u.invite_code) IN (SELECT upper(invite_code) FROM bs_users WHERE invite_code IS NOT NULL GROUP BY 1 HAVING count(*) = 1);
 
+-- Giveaways (like on Case Battle): every day / every week a brainrot is raffled among the players who
+-- joined; to join, a player tops up at least min_topup coins while it runs. What the main admin set for
+-- each kind:
+CREATE TABLE IF NOT EXISTS bs_giveaway_plans (
+  kind        TEXT PRIMARY KEY CHECK (kind IN ('day', 'week')),
+  active      BOOLEAN NOT NULL DEFAULT FALSE,
+  item_id     INTEGER REFERENCES bs_items(id),
+  min_topup   BIGINT NOT NULL DEFAULT 0 CHECK (min_topup >= 0),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- each giveaway: open while it runs (one per kind), done when drawn (winner_id NULL: nobody joined)
+CREATE TABLE IF NOT EXISTS bs_giveaways (
+  id          BIGSERIAL PRIMARY KEY,
+  kind        TEXT NOT NULL CHECK (kind IN ('day', 'week')),
+  item_id     INTEGER NOT NULL REFERENCES bs_items(id),
+  min_topup   BIGINT NOT NULL DEFAULT 0 CHECK (min_topup >= 0),
+  starts_at   TIMESTAMPTZ NOT NULL,
+  ends_at     TIMESTAMPTZ NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+  winner_id   BIGINT REFERENCES bs_users(id) ON DELETE SET NULL,
+  inv_id      BIGINT,
+  entries     INTEGER NOT NULL DEFAULT 0,
+  drawn_at    TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bs_giveaways_open_idx ON bs_giveaways (kind) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS bs_giveaways_kind_idx ON bs_giveaways (kind, id DESC);
+CREATE TABLE IF NOT EXISTS bs_giveaway_entries (
+  giveaway_id BIGINT NOT NULL REFERENCES bs_giveaways(id) ON DELETE CASCADE,
+  user_id     BIGINT NOT NULL REFERENCES bs_users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (giveaway_id, user_id)
+);
+-- every top-up and what it brought in coins (Stars, coins credited, brainrots given), when it came:
+-- the giveaways count the ones made while they run
+CREATE TABLE IF NOT EXISTS bs_topups (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES bs_users(id) ON DELETE CASCADE,
+  request_id  BIGINT,
+  value       BIGINT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS bs_topups_user_idx ON bs_topups (user_id, created_at);
+
 -- Row level security with no policies: the app connects as the table owner
 -- (unaffected), while public APIs such as Supabase's Data API get no access.
 ALTER TABLE bs_users        ENABLE ROW LEVEL SECURITY;
@@ -354,3 +397,7 @@ ALTER TABLE bs_auto_promos  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_auto_promo_uses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_ref_codes    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bs_invite_rewards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bs_giveaway_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bs_giveaways    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bs_giveaway_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bs_topups       ENABLE ROW LEVEL SECURITY;

@@ -11,6 +11,7 @@ export const ADMIN_SECTIONS = [
   'users',
   'referrals',
   'promos',
+  'giveaways',
   'settings',
   'broadcast',
 ];

@@ -19,6 +19,7 @@ import { createDice } from './dice.js';
 import { createAutoPromo } from './autopromo.js';
 import { createReferrals, levelsOnce } from './referrals.js';
 import { createInvites, weeklyOnce } from './invites.js';
+import { createGiveaways, giveawaysOnce } from './giveaways.js';
 import { GameError } from './game.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,6 +68,7 @@ export async function createServer(env = process.env, overrides = {}) {
   await addShareCaseOnce(db, settings).catch((e) => console.warn('[db] share case:', e.message));
   await levelsOnce(db, settings).catch((e) => console.warn('[db] referral levels:', e.message));
   await weeklyOnce(db, settings).catch((e) => console.warn('[db] invites weekly:', e.message));
+  await giveawaysOnce(db, settings).catch((e) => console.warn('[db] giveaways:', e.message));
   await marketPricesOnce(db, settings).catch((e) => console.warn('[db] market prices:', e.message));
 
   const holder = { bot: null, game: null };
@@ -85,8 +87,11 @@ export async function createServer(env = process.env, overrides = {}) {
   const access = createAccess({ settings, users });
   const referrals = createReferrals({ db, settings });
   const invites = createInvites({ db, settings, tg });
+  // giveaways: drawn when their time is up (every 30 s; tests draw them themselves)
+  const giveaways = createGiveaways({ db, game, tg, config, rng: overrides.rng, tickMs: Number(env.GIVEAWAY_TICK_MS ?? (config.isTest ? 0 : 30_000)) });
+  await giveaways.ensure().catch((e) => console.warn('[giveaways] start failed:', e.message));
   const autoPromo = createAutoPromo({ db, settings, rng: overrides.autoPromoRng, now: overrides.now });
-  const requests = createRequests({ db, settings, game, tg, config, access, referrals, autoPromo, invites });
+  const requests = createRequests({ db, settings, game, tg, config, access, referrals, autoPromo, invites, giveaways });
   const crash = createCrash({ db, settings, game, rng: overrides.rng, now: overrides.now });
   const dice = createDice({ db, settings, game, rng: overrides.rng });
 
@@ -107,12 +112,12 @@ export async function createServer(env = process.env, overrides = {}) {
 
   if (botPart) app.post(config.webhookPath, express.json({ limit: '1mb' }), botPart.webhookHandler);
 
-  const { router, auth } = createApi({ config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites });
+  const { router, auth } = createApi({ config, db, settings, game, live, users, tg, requests, access, crash, dice, referrals, autoPromo, invites, giveaways });
   app.use(
     '/api/admin',
     express.json({ limit: '1mb' }),
     auth,
-    createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, broadcaster: botPart ? botPart.broadcaster : noBroadcaster }),
+    createAdmin({ db, settings, game, live, tg, users, requests, access, referrals, invites, giveaways, broadcaster: botPart ? botPart.broadcaster : noBroadcaster }),
   );
   app.use('/api', express.json({ limit: '64kb' }), router);
   app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
@@ -133,7 +138,7 @@ export async function createServer(env = process.env, overrides = {}) {
   app.use((err, req, res, next) => sendError(res, err));
 
   let server = null;
-  const ctx = { config, db, settings, game, live, users, tg, requests, crash, dice, referrals, autoPromo, bot: botPart, app };
+  const ctx = { config, db, settings, game, live, users, tg, requests, crash, dice, referrals, autoPromo, giveaways, bot: botPart, app };
 
   ctx.start = async (port = config.port) => {
     await new Promise((resolve) => {
@@ -158,11 +163,13 @@ export async function createServer(env = process.env, overrides = {}) {
         console.error('[bot] failed to start:', e.description || e.message);
       }
     }
+    giveaways.start(); // after the bot: the winners get a message
     return ctx.port;
   };
 
   ctx.stop = async () => {
     live.stop();
+    await giveaways.stop();
     crash.close();
     if (botPart && botPart.bot.isRunning()) await botPart.bot.stop();
     if (server) await new Promise((r) => server.close(r));
