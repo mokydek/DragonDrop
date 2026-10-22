@@ -1,10 +1,10 @@
 // Admin panel (loaded only for admins).
 
-const SECTIONS = ['overview', 'deposits', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'settings', 'broadcast'];
+const SECTIONS = ['overview', 'deposits', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'giveaways', 'settings', 'broadcast'];
 const REQ_KIND = { deposits: 'deposit', withdrawals: 'withdraw' };
 // what the main admin can switch off for the other admins (the same list as src/access.js) and
 // the tab each one is in
-const ADMIN_SECTIONS = ['overview', 'deposits_brainrots', 'deposits_stars', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'settings', 'broadcast'];
+const ADMIN_SECTIONS = ['overview', 'deposits_brainrots', 'deposits_stars', 'withdrawals', 'cases', 'items', 'users', 'referrals', 'promos', 'giveaways', 'settings', 'broadcast'];
 const TAB_NEEDS = { deposits: ['deposits_brainrots', 'deposits_stars'] };
 const SECTION_LABEL = { deposits_brainrots: 'a.sec.depBrainrots', deposits_stars: 'a.sec.depStars' };
 /** Does this admin see the section? (the server decides; the main admin sees everything) */
@@ -73,6 +73,7 @@ export function renderAdmin(view, route, ctx) {
     users: () => (route.id ? userDetail(body, Number(route.id)) : usersList(body)),
     referrals: () => (route.id ? refDetail(body, decodeURIComponent(route.id)) : referrals(body)),
     promos: () => promos(body),
+    giveaways: () => giveawaysAdmin(body),
     settings: () => settingsForm(body),
     broadcast: () => broadcast(body),
   }[sub];
@@ -659,6 +660,8 @@ function itemSource(f) {
     case 'deposit':
       if (!f.requestId) return C.t('a.src.deposit');
       return can('deposits_brainrots') ? h`<a class="src-link" href="#/admin/deposits/${f.requestId}">${C.t('a.r.deposit', { id: f.requestId })}</a>` : C.t('a.r.deposit', { id: f.requestId });
+    case 'giveaway':
+      return f.giveaway ? C.t('a.src.giveaway', { id: f.giveaway.id }) : C.t('a.giveaways');
     case 'refund':
       if (!f.requestId) return C.t('a.src.refundAny');
       return can('withdrawals') ? h`<a class="src-link" href="#/admin/withdrawals/${f.requestId}">${C.t('a.src.refund', { id: f.requestId })}</a>` : C.t('a.src.refund', { id: f.requestId });
@@ -1042,6 +1045,104 @@ async function promos(body) {
       adminError(err);
     }
   });
+}
+
+// ------------------------------------------------------------------ giveaways
+// every day / every week a brainrot among the players who joined (they top up at least the minimum
+// while it runs): the main admin sets each kind (on / off, the brainrot, the minimum); every admin sees
+// the one running now, who joined it and who won the last ones
+const GW_KINDS = ['day', 'week'];
+const starsOf = (coins) => {
+  const rate = (C.S.topup && C.S.topup.starsRate) || 0;
+  return rate > 0 ? Math.ceil(coins / rate - 1e-9) : 0;
+};
+const gwPrize = (it) => (it ? h`<span class="row-art">${C.art(it)}</span><b>${it.name}</b>${C.money(it.value, 11)}` : h`<b>—</b>`);
+
+function gwKindCard(k, v, canEdit) {
+  const cur = v.current;
+  return h`<section class="form gw-adm" data-kind="${k}" data-item="${v.item ? v.item.id : ''}">
+    <div class="form-head gw-adm-head"><span>${C.t('a.gw.' + k)}</span>${canEdit
+      ? h`<label class="switch"><input type="checkbox" name="active" ${v.active ? C.raw('checked') : ''}><i></i>${C.t('a.gw.on')}</label>`
+      : h`<span class="badge ${v.active ? 'ok' : 'off'}">${C.t(v.active ? 'a.gw.on' : 'a.off')}</span>`}</div>
+    <div class="gw-adm-prize"><span class="gw-adm-lbl">${C.t('a.gw.prize')}</span><span class="gw-adm-it">${gwPrize(v.item)}</span>${canEdit
+      ? h`<button type="button" class="btn small ghost" data-gw-pick="${k}">${C.t('a.gw.pick')}</button>`
+      : ''}</div>
+    ${canEdit
+      ? h`<label>${C.t('a.gw.min')}<input class="input" name="min" type="number" min="0" step="1" value="${v.min}" inputmode="numeric"><small class="gw-adm-stars">${C.t('a.gw.stars', { n: C.fmt(starsOf(v.min)) })}</small></label>
+        <div class="note">${C.t('a.gw.note')}</div>
+        <div class="form-foot"><button type="button" class="btn primary" data-gw-save="${k}">${C.t('a.save')}</button></div>`
+      : h`<div class="kv"><span>${C.t('a.gw.min')}</span><b>${C.money(v.min, 12)}</b></div>`}
+    ${cur
+      ? h`<button type="button" class="row gw-adm-now" data-gw-ent="${cur.id}">
+          <span class="row-art">${cur.item ? C.art(cur.item) : ''}</span>
+          <span class="row-main"><b>${C.t('a.gw.now', { id: cur.id })} · ${cur.item ? cur.item.name : ''}</b><small>${C.t('a.gw.until', { t: C.fmtDateTime(cur.endsAt) })} · ${C.t('a.gw.n', { n: C.fmt(cur.entries) })}</small></span>
+          ${C.raw(C.ICON.chevron)}
+        </button>
+        <div class="list gw-adm-ent" id="gwEnt${cur.id}" hidden></div>`
+      : ''}
+    ${v.past.length
+      ? h`<h4 class="sec-title">${C.t('a.gw.past')}</h4>
+        <div class="list">${v.past.map(
+          (p) => h`<div class="row ${p.winner ? '' : 'dim'}">
+            <span class="row-art">${p.item ? C.art(p.item) : ''}</span>
+            <span class="row-main"><b>#${p.id} · ${p.item ? p.item.name : ''}</b><small>${C.fmtDateTime(p.at)} · ${p.winner
+              ? h`<a href="#/admin/users/${p.winner.id}">${p.winner.name}</a> · ${C.t('a.gw.n', { n: C.fmt(p.entries) })}`
+              : C.t('a.gw.nobody')}</small></span>
+          </div>`,
+        )}</div>`
+      : ''}
+  </section>`;
+}
+
+async function giveawaysAdmin(body) {
+  const r = await C.API.get('/admin/giveaways');
+  if (!body.isConnected) return;
+  const draw = (x) => C.render(body, h`${GW_KINDS.map((k) => gwKindCard(k, x.giveaways[k], x.canEdit))}`);
+  draw(r);
+  body.oninput = (e) => {
+    const min = e.target.closest('[name=min]');
+    if (min) min.closest('label').querySelector('.gw-adm-stars').textContent = C.t('a.gw.stars', { n: C.fmt(starsOf(Number(min.value) || 0)) });
+  };
+  body.onclick = async (e) => {
+    const pick = e.target.closest('[data-gw-pick]');
+    const save = e.target.closest('[data-gw-save]');
+    const ent = e.target.closest('[data-gw-ent]');
+    try {
+      if (pick) {
+        const sec = pick.closest('.gw-adm');
+        pickItem(C.S.items, (it) => {
+          sec.dataset.item = String(it.id);
+          C.render(sec.querySelector('.gw-adm-it'), gwPrize(it));
+        });
+      } else if (save) {
+        const sec = save.closest('.gw-adm');
+        const x = await C.API.put(`/admin/giveaways/${sec.dataset.kind}`, {
+          active: sec.querySelector('[name=active]').checked,
+          itemId: Number(sec.dataset.item),
+          min: Number(sec.querySelector('[name=min]').value),
+        });
+        if (!body.isConnected) return;
+        draw(x);
+        C.toast(C.t('a.saved'), 'ok');
+      } else if (ent) {
+        const box = body.querySelector(`#gwEnt${ent.dataset.gwEnt}`);
+        if (!box.hidden) {
+          box.hidden = true;
+          return;
+        }
+        const { entries } = await C.API.get(`/admin/giveaways/${ent.dataset.gwEnt}/entries`);
+        C.render(
+          box,
+          entries.length
+            ? h`${entries.map((u) => h`<a class="row" href="#/admin/users/${u.id}"><span class="row-main"><b>${u.name}</b><small>${u.username ? '@' + u.username + ' · ' : ''}${C.fmtDateTime(u.at)}</small></span></a>`)}`
+            : h`<div class="note">${C.t('a.gw.none')}</div>`,
+        );
+        box.hidden = false;
+      }
+    } catch (err) {
+      adminError(err);
+    }
+  };
 }
 
 // ------------------------------------------------------------------ settings

@@ -35,6 +35,9 @@ const ICON = {
   edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19.3 8.7a2.1 2.1 0 0 0 0-3L18.3 4.7a2.1 2.1 0 0 0-3 0L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
   chevron: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
   gift: '<svg viewBox="0 0 24 24"><rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5v7A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-7M12 8.5V21M12 8.5S10.8 4 8.2 4a2.25 2.25 0 0 0 0 4.5M12 8.5S13.2 4 15.8 4a2.25 2.25 0 0 1 0 4.5"/></svg>',
+  info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.4"/></svg>',
+  trophy:
+    '<svg viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H4.5v1.5A3.5 3.5 0 0 0 8 11M16 6h3.5v1.5A3.5 3.5 0 0 1 16 11M12 13v3.5M8.5 20h7M9.5 20l.5-3.5h4l.5 3.5"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/></svg>',
   dice: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="8.6" cy="8.6" r="1.35" fill="currentColor"/><circle cx="12" cy="12" r="1.35" fill="currentColor"/><circle cx="15.4" cy="15.4" r="1.35" fill="currentColor"/></svg>',
   eyeOff:
@@ -78,6 +81,8 @@ const S = {
   partner: false, // has a referral code of their own: the "Referrals" screen in the profile
   refs: null, // that screen: the last /referrals/mine answer and which code is shown
   invites: null, // "Invite friends" (profile): the last /invites answer — the link, the friends and what they brought
+  giveaways: [], // the giveaways running now (the cases screen): [{ id, kind, item, endsAt }]
+  gw: null, // the giveaways page: the last /giveaways answer — each giveaway, its condition, whether the player joined, its last winners
   sound: store.getItem('bs_sound') !== '0', // sounds: coins when selling, the upgrader win (this device; on by default)
   streamer: store.getItem('bs_streamer') === '1', // streamer mode: balance, sums, own name / ID / Roblox nick and players' names hidden (this device)
   halloween: store.getItem('bs_hw') === '1', // Halloween look (admin switch); the last known state until the server answers
@@ -452,6 +457,7 @@ function route() {
   if (tab === 'profile') return { tab: 'profile', view: 'profile' };
   if (tab === 'refs' && S.partner) return { tab: 'profile', view: 'refs' };
   if (tab === 'invite') return { tab: 'profile', view: 'invite' };
+  if (tab === 'giveaways') return { tab: 'cases', view: 'giveaways' };
   if (tab === 'admin' && adminUi()) return { tab: 'admin', view: 'admin', sub: arg || '', id: arg2 };
   return { tab: 'cases', view: 'cases' };
 }
@@ -473,7 +479,7 @@ async function renderView() {
   const r = route();
   markTabs(r.tab);
   $('#live')?.classList.toggle('hidden', r.tab === 'admin');
-  const back = r.view === 'case' || r.view === 'refs' || (r.view === 'admin' && r.id);
+  const back = r.view === 'case' || r.view === 'refs' || r.view === 'giveaways' || (r.view === 'admin' && r.id);
   try {
     if (back) {
       tg?.BackButton?.show();
@@ -491,6 +497,7 @@ async function renderView() {
   else if (r.view === 'profile') viewProfile(view);
   else if (r.view === 'refs') viewRefs(view);
   else if (r.view === 'invite') viewInvite(view);
+  else if (r.view === 'giveaways') viewGiveaways(view);
   else if (r.view === 'admin') {
     if (!adminModule) adminModule = await import('./admin.js');
     adminModule.renderAdmin(view, r, adminCtx());
@@ -617,6 +624,181 @@ async function refreshAutoPromo() {
   }
 }
 
+// ------------------------------------------------------------------ giveaways (like on Case Battle)
+// Every day and every week a brainrot among the players who joined: to join, top up at least the
+// minimum while the giveaway runs and press «Участвовать». The cases screen shows them small (the
+// prize and the time left); the page shows each with its condition, the timer and the last winners.
+let gwFetchedAt = 0;
+let gwBusy = false;
+const DAY_MS = 86_400_000;
+
+/** The time left: 17:29:01, or 6 д 19:11:05 when it is more than a day. */
+function gwLeft(iso) {
+  const ms = Math.max(0, new Date(iso).getTime() - Date.now());
+  const d = Math.floor(ms / DAY_MS);
+  const rest = countdown(new Date(Date.now() + (ms % DAY_MS)).toISOString());
+  return d > 0 ? `${d} ${t('gwDays')} ${rest}` : rest;
+}
+/** How much of the giveaway's time has passed, %. */
+function gwPct(from, to) {
+  const a = new Date(from).getTime();
+  const b = new Date(to).getTime();
+  if (!(b > a)) return 100;
+  return Math.max(0, Math.min(100, ((Date.now() - a) / (b - a)) * 100));
+}
+const gwBrief = (list) => list.map(({ id, kind, item, endsAt }) => ({ id, kind, item, endsAt }));
+
+/** The cases screen: the giveaways running now — the prize and the time left; a tap opens the page. */
+function gwStrip() {
+  const list = S.giveaways || [];
+  if (!list.length) return '';
+  return html`<section class="gw-strip" id="gwStrip">
+    <h3 class="sec-title">${t('gwTitle')}</h3>
+    <div class="gw-tiles">${list.map(
+      (g) => html`<button class="gw-tile r-${g.item.rarity}" data-act="gw-open">
+        <span class="gw-kind">${t('gw.' + g.kind + 'Short')}</span>
+        <span class="gw-art">${art(g.item)}</span>
+        <span class="gw-name">${g.item.name}</span>
+        <span class="gw-foot">${money(g.item.value, 12)}<b class="gw-left" data-gw-left="${g.endsAt}">${gwLeft(g.endsAt)}</b></span>
+      </button>`,
+    )}</div>
+  </section>`;
+}
+
+/** Every second: the time left and the bars; a giveaway whose time is up — the next one from the server. */
+function gwTick() {
+  let over = false;
+  for (const el of $$('[data-gw-left]')) {
+    el.textContent = gwLeft(el.dataset.gwLeft);
+    if (new Date(el.dataset.gwLeft).getTime() <= Date.now()) over = true;
+  }
+  for (const el of $$('[data-gw-bar]')) el.style.width = `${gwPct(el.dataset.gwFrom, el.dataset.gwBar)}%`;
+  if (over && Date.now() - gwFetchedAt > 5000) refreshGiveaways();
+}
+
+async function refreshGiveaways() {
+  gwFetchedAt = Date.now();
+  try {
+    S.gw = await API.get('/giveaways');
+    S.giveaways = gwBrief(S.gw.giveaways);
+  } catch {
+    return; // next tick
+  }
+  const v = route().view;
+  if (v === 'giveaways') drawGiveaways($('#view'));
+  else if (v === 'cases') {
+    const el = $('#gwStrip');
+    const next = gwStrip();
+    if (el && next) el.outerHTML = next.__html;
+    else if (el) el.remove();
+  }
+}
+
+async function viewGiveaways(view) {
+  if (!S.gw) render(view, html`${gwHead()}<div class="spinner"></div>`);
+  else drawGiveaways(view);
+  S.timers.push(setInterval(gwTick, 1000));
+  try {
+    S.gw = await API.get('/giveaways');
+    gwFetchedAt = Date.now();
+    S.giveaways = gwBrief(S.gw.giveaways);
+  } catch (e) {
+    if (!S.gw) return showError(e);
+  }
+  if (route().view === 'giveaways') drawGiveaways(view);
+}
+
+function gwHead() {
+  return html`<div class="view-head">
+    <button class="back" data-act="back" aria-label="${t('back')}">${raw(ICON.back)}</button>
+    <div class="vh-title">${t('gwTitle')}</div>
+    <button class="gw-rules-btn" data-act="gw-rules">${raw(ICON.info)}<span>${t('gwRules')}</span></button>
+  </div>`;
+}
+
+/** A giveaway: what is raffled, from what top-up, the time left, «Участвовать» and the last winners. */
+function gwCard(g) {
+  return html`<section class="gw-card r-${g.item.rarity}" data-gw="${g.id}">
+    <div class="gw-top"><span class="gw-no">#${g.id}</span><span class="gw-ttl">${t('gw.' + g.kind)}</span>${money(g.item.value, 13)}</div>
+    <div class="gw-body">
+      <div class="gw-info">
+        <div class="gw-prize">${g.item.name}</div>
+        <div class="gw-line">${t('gwFrom')} ${money(g.min, 12)}</div>
+        <div class="gw-line">${t('gwLeft')} <b data-gw-left="${g.endsAt}">${gwLeft(g.endsAt)}</b></div>
+        <div class="gw-bar"><i data-gw-bar="${g.endsAt}" data-gw-from="${g.startsAt}" style="width:${gwPct(g.startsAt, g.endsAt)}%"></i></div>
+      </div>
+      <div class="gw-pic">${art(g.item)}</div>
+    </div>
+    ${g.joined
+      ? html`<button class="btn gw-btn joined" disabled>${raw(ICON.check)}<span>${t('gwJoined')}</span></button>`
+      : html`<button class="btn primary gw-btn" data-act="gw-join" data-id="${g.id}">${t('gwJoin')}</button>`}
+    ${g.winners.length
+      ? html`<div class="gw-wins">
+          <div class="gw-wins-h">${raw(ICON.trophy)}<span>${t('gwWinners')}</span></div>
+          ${g.winners.map(
+            (w) => html`<div class="gw-win">
+              <span class="gw-ava">${initials(w.name)}</span>
+              <span class="gw-who">${w.name}</span>
+              <span class="gw-when">${fmtDateTime(w.at)} <b>#${w.id}</b></span>
+              <span class="gw-what">${w.item ? w.item.name : ''}</span>
+              ${w.item ? money(w.item.value, 11) : ''}
+            </div>`,
+          )}
+        </div>`
+      : ''}
+  </section>`;
+}
+
+function drawGiveaways(view) {
+  const list = (S.gw && S.gw.giveaways) || [];
+  render(view, html`${gwHead()}${list.map(gwCard)}`);
+}
+
+/** «Участвовать»: joined — a toast; the sum is not reached yet — how much is left, with the top-up. */
+async function joinGiveaway(id) {
+  if (gwBusy || !id) return;
+  gwBusy = true;
+  haptic.tick();
+  try {
+    S.gw = await API.post(`/giveaways/${id}/join`);
+    S.giveaways = gwBrief(S.gw.giveaways);
+    haptic.notify('success');
+    toast(t('gwJoinedOk'), 'ok');
+    if (route().view === 'giveaways') drawGiveaways($('#view'));
+  } catch (e) {
+    if (e && e.code === 'giveaway_topup') gwNeed(Number(e.data.left) || 0);
+    else {
+      showError(e);
+      if (e && e.code === 'giveaway_over') refreshGiveaways();
+    }
+  } finally {
+    gwBusy = false;
+  }
+}
+
+function gwNeed(left) {
+  const stars = S.topup.starsRate > 0 ? Math.ceil(left / S.topup.starsRate - 1e-9) : 0;
+  haptic.notify('warning');
+  openModal(
+    html`<div class="gw-need">
+      <div class="sheet-title">${t('gwNeedTitle')}</div>
+      <div class="gw-need-sum">${money(left, 24)}${stars ? html`<small>${t('gwStars', { n: fmt(stars) })}</small>` : ''}</div>
+      <p class="gw-need-note">${t('gwNeedNote')}</p>
+      <button class="btn primary big" data-act="gw-topup">${t('ap.topup')}</button>
+    </div>`,
+  );
+}
+
+function gwRules() {
+  haptic.tick();
+  openModal(
+    html`<div class="gw-rules">
+      <div class="sheet-title">${t('gwRules')}</div>
+      ${['what', 'join', 'win'].map((k) => html`<h4 class="gw-rh">${t('gwR.' + k + 'H')}</h4><p class="gw-rp">${t('gwR.' + k)}</p>`)}
+    </div>`,
+  );
+}
+
 function viewCases(view) {
   const fc = freeCase();
   render(
@@ -633,6 +815,7 @@ function viewCases(view) {
           <div class="free-state ${S.free && S.free.nextAt && new Date(S.free.nextAt) > new Date() ? '' : 'ready'}" id="freeState">${freeStatusText()}</div>
         </button>`
       : ''}
+    ${gwStrip()}
     ${caseSections()}`,
   );
   if (fc) {
@@ -646,6 +829,7 @@ function viewCases(view) {
     );
   }
   if (S.autoPromo) S.timers.push(setInterval(apTick, 1000));
+  if (S.giveaways.length) S.timers.push(setInterval(gwTick, 1000));
 }
 
 // weighted random for the decorative roulette strip
@@ -2877,6 +3061,17 @@ const actions = {
     haptic.tick();
     openTopup(S.autoPromo && !S.autoPromo.used ? S.autoPromo.code : '');
   },
+  // giveaways: the page, «Участвовать», the rules, the top-up when the sum is not reached yet
+  'gw-open': () => {
+    haptic.tick();
+    go('#/giveaways');
+  },
+  'gw-join': (b) => joinGiveaway(Number(b.dataset.id)),
+  'gw-rules': () => gwRules(),
+  'gw-topup': () => {
+    haptic.tick();
+    openTopup();
+  },
   'tu-menu': () => topupMenu(),
   'tu-stars': () => topupStars(),
   'tu-brainrots': () => (qIsOpen() ? topupQueue() : topupBrainrots()),
@@ -3206,6 +3401,7 @@ function applyBootstrap(b) {
   if (b.crash) S.crash = b.crash;
   if (b.dice) S.dice = b.dice;
   S.autoPromo = b.autoPromo || null;
+  S.giveaways = Array.isArray(b.giveaways) ? b.giveaways : [];
   applyHalloween(!!b.halloween);
   S.free = b.free;
   S.nick = b.nick || { available: false, nextAt: null };
