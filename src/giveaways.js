@@ -187,12 +187,18 @@ export function createGiveaways({ db, game, tg, config = {}, rng = cryptoRng, ti
     return (await openRounds()).map((r) => ({ id: Number(r.id), kind: r.kind, item: item(r.item_id), endsAt: r.ends_at }));
   }
 
-  /** The giveaways page: each giveaway, its condition, whether the player joined, and its last winners. */
+  /** The giveaways page: each giveaway, its condition, how many joined, whether the player did, and its last winners. */
   async function list(user) {
     const rows = await openRounds();
+    const ids = rows.map((r) => r.id);
     const mine = rows.length
-      ? new Set((await db.many('SELECT giveaway_id FROM bs_giveaway_entries WHERE user_id = $1 AND giveaway_id = ANY($2::bigint[])', [user.id, rows.map((r) => r.id)])).map((r) => Number(r.giveaway_id)))
+      ? new Set((await db.many('SELECT giveaway_id FROM bs_giveaway_entries WHERE user_id = $1 AND giveaway_id = ANY($2::bigint[])', [user.id, ids])).map((r) => Number(r.giveaway_id)))
       : new Set();
+    const counts = new Map(
+      rows.length
+        ? (await db.many('SELECT giveaway_id, count(*)::int AS n FROM bs_giveaway_entries WHERE giveaway_id = ANY($1::bigint[]) GROUP BY giveaway_id', [ids])).map((r) => [Number(r.giveaway_id), r.n])
+        : [],
+    );
     const won = await winners(KIND_LIST);
     return {
       giveaways: rows.map((r) => ({
@@ -202,6 +208,7 @@ export function createGiveaways({ db, game, tg, config = {}, rng = cryptoRng, ti
         min: Number(r.min_topup),
         startsAt: r.starts_at,
         endsAt: r.ends_at,
+        entries: counts.get(Number(r.id)) || 0,
         joined: mine.has(Number(r.id)),
         winners: won[r.kind],
       })),
