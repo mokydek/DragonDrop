@@ -66,10 +66,10 @@ async function payStars(u, stars) {
 test('a daily giveaway of a Garama and a weekly one of a Dragon Cannelloni run from the start: 24 hours and 7 days, from 100 and 500 coins', async () => {
   const gs = await list(ann);
   assert.deepEqual(
-    gs.map((g) => [g.kind, g.item.name, g.min, new Date(g.endsAt) - new Date(g.startsAt), g.joined, g.winners]),
+    gs.map((g) => [g.kind, g.item.name, g.min, new Date(g.endsAt) - new Date(g.startsAt), g.entries, g.joined, g.winners]),
     [
-      ['day', 'Garama and Madundung', 100, DAY, false, []],
-      ['week', 'Dragon Cannelloni', 500, 7 * DAY, false, []],
+      ['day', 'Garama and Madundung', 100, DAY, 0, false, []],
+      ['week', 'Dragon Cannelloni', 500, 7 * DAY, 0, false, []],
     ],
   );
   assert.ok(gs[0].item.image && gs[0].item.value > 0);
@@ -97,8 +97,10 @@ test('to join, a player tops up at least the minimum while the giveaway runs (se
   await payStars(ann, 25);
   r = await join(ann, day.id);
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.deepEqual(r.body.giveaways.map((g) => [g.kind, g.joined]), [['day', true], ['week', false]]);
+  // how many joined: everyone sees it; joining twice counts once
+  assert.deepEqual(r.body.giveaways.map((g) => [g.kind, g.joined, g.entries]), [['day', true, 1], ['week', false, 0]]);
   assert.equal((await join(ann, day.id)).status, 200, 'again: fine');
+  assert.deepEqual((await list(ben)).map((g) => [g.kind, g.joined, g.entries]), [['day', false, 1], ['week', false, 0]]);
   // the same top-ups count for the weekly one: 400 left of 500
   const week = await byKind(ann, 'week');
   assert.equal((await join(ann, week.id)).body.left, 400);
@@ -116,6 +118,7 @@ test('to join, a player tops up at least the minimum while the giveaway runs (se
   const small = [...app.ctx.game.catalog.items.values()].find((i) => i.value >= 40);
   assert.equal((await app.post(`/api/admin/requests/${id}/give`, { user: boss, body: { itemId: small.id } })).status, 200);
   assert.equal((await join(ben, day.id)).status, 200);
+  assert.equal((await byKind(ann, 'day')).entries, 2);
   // a giveaway that is not there; garbage
   assert.equal((await join(ann, 999999)).status, 404);
   assert.equal((await join(ann, 'abc')).status, 404);
@@ -148,6 +151,7 @@ test('when the time is up, one of those who joined wins at random: the brainrot 
   const day = await byKind(ann, 'day');
   assert.equal(day.id, Number(next.id));
   assert.equal(day.joined, false);
+  assert.equal(day.entries, 0, 'a new giveaway: nobody yet');
   // the winner under the giveaway
   assert.deepEqual(
     day.winners.map((w) => [w.id, w.name, w.item.name]),

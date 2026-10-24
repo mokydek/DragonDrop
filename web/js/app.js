@@ -631,6 +631,7 @@ async function refreshAutoPromo() {
 let gwFetchedAt = 0;
 let gwBusy = false;
 const DAY_MS = 86_400_000;
+const GW_POLL_MS = 30_000; // on the page: how many joined, every 30 s
 
 /** The time left: 17:29:01, or 6 д 19:11:05 when it is more than a day. */
 function gwLeft(iso) {
@@ -674,10 +675,13 @@ function gwTick() {
   }
   for (const el of $$('[data-gw-bar]')) el.style.width = `${gwPct(el.dataset.gwFrom, el.dataset.gwBar)}%`;
   if (over && Date.now() - gwFetchedAt > 5000) refreshGiveaways();
+  else if (route().view === 'giveaways' && Date.now() - gwFetchedAt > GW_POLL_MS) refreshGiveaways(true);
 }
 
-async function refreshGiveaways() {
+/** The giveaways from the server; `counts`: on the page only the number of players changes, no redraw. */
+async function refreshGiveaways(counts = false) {
   gwFetchedAt = Date.now();
+  const before = S.gw ? S.gw.giveaways.map((g) => g.id).join() : '';
   try {
     S.gw = await API.get('/giveaways');
     S.giveaways = gwBrief(S.gw.giveaways);
@@ -685,8 +689,14 @@ async function refreshGiveaways() {
     return; // next tick
   }
   const v = route().view;
-  if (v === 'giveaways') drawGiveaways($('#view'));
-  else if (v === 'cases') {
+  if (v === 'giveaways') {
+    if (counts && S.gw.giveaways.map((g) => g.id).join() === before) {
+      for (const g of S.gw.giveaways) {
+        const el = $(`[data-gw-players="${g.id}"]`);
+        if (el) el.textContent = fmt(g.entries || 0);
+      }
+    } else drawGiveaways($('#view'));
+  } else if (v === 'cases') {
     const el = $('#gwStrip');
     const next = gwStrip();
     if (el && next) el.outerHTML = next.__html;
@@ -724,6 +734,7 @@ function gwCard(g) {
       <div class="gw-info">
         <div class="gw-prize">${g.item.name}</div>
         <div class="gw-line">${t('gwFrom')} ${money(g.min, 12)}</div>
+        <div class="gw-line">${t('gwPlayers')} <b data-gw-players="${g.id}">${fmt(g.entries || 0)}</b></div>
         <div class="gw-line">${t('gwLeft')} <b data-gw-left="${g.endsAt}">${gwLeft(g.endsAt)}</b></div>
         <div class="gw-bar"><i data-gw-bar="${g.endsAt}" data-gw-from="${g.startsAt}" style="width:${gwPct(g.startsAt, g.endsAt)}%"></i></div>
       </div>
