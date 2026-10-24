@@ -3598,7 +3598,8 @@ test('giveaways (like on Case Battle): two tiles on the cases screen; the page �
   assert.equal(await day.locator('.gw-ttl').textContent(), 'Розыгрыш каждый день');
   assert.equal(await day.locator('.gw-prize').textContent(), 'Garama and Madundung');
   assert.equal((await day.locator('.gw-line').first().textContent()).replace(/\s+/g, ' ').trim(), 'При пополнении от: 100');
-  assert.match((await day.locator('.gw-line').nth(1).textContent()).replace(/\s+/g, ' ').trim(), /^Осталось: 23:59:\d\d$/);
+  assert.equal((await day.locator('.gw-line').nth(1).textContent()).replace(/\s+/g, ' ').trim(), 'Участников: 0');
+  assert.match((await day.locator('.gw-line').nth(2).textContent()).replace(/\s+/g, ' ').trim(), /^Осталось: 23:59:\d\d$/);
   assert.equal(await day.locator('.gw-bar i').count(), 1);
   assert.equal((await day.locator('.gw-btn').textContent()).trim(), 'Участвовать');
   // the last winner under it
@@ -3609,6 +3610,7 @@ test('giveaways (like on Case Battle): two tiles on the cases screen; the page �
   );
   assert.equal(await page.locator('.gw-card').nth(1).locator('.gw-ttl').textContent(), 'Розыгрыш каждую неделю');
   assert.equal(await page.locator('.gw-card').nth(1).locator('.gw-wins').count(), 0, 'nobody won a weekly one yet');
+  assert.equal((await page.locator('.gw-card').nth(1).locator('.gw-line').nth(1).textContent()).replace(/\s+/g, ' ').trim(), 'Участников: 0');
   // «Участвовать» before the top-up: how much is left; «Пополнить» opens the top-up
   await day.locator('.gw-btn').click();
   await page.waitForSelector('.gw-need');
@@ -3634,6 +3636,7 @@ test('giveaways (like on Case Battle): two tiles on the cases screen; the page �
   assert.equal(await page.textContent('.toast.ok'), 'Ты участвуешь в розыгрыше!');
   assert.equal((await page.locator('.gw-card').first().locator('.gw-btn').textContent()).trim(), 'Ты участвуешь');
   assert.equal(await page.locator('.gw-card').first().locator('.gw-btn').isDisabled(), true);
+  assert.equal((await page.locator('.gw-card').first().locator('.gw-line').nth(1).textContent()).replace(/\s+/g, ' ').trim(), 'Участников: 1');
   assert.deepEqual((await demo.app.get(`/api/admin/giveaways/${dayId}/entries`, { user: boss })).body.entries.map((e) => e.name), ['Лена']);
   // the rules
   await page.click('[data-act="gw-rules"]');
@@ -3653,6 +3656,28 @@ test('giveaways (like on Case Battle): two tiles on the cases screen; the page �
   }
   assert.deepEqual(errors, []);
   await page.context().close();
+
+  // the number of players goes up by itself while the page is open (it asks every 30 s)
+  {
+    const { page: c, errors: e4 } = await open({ user: lena, path: '/#/giveaways' });
+    await c.clock.install();
+    await c.reload();
+    await c.waitForSelector(`[data-gw-players="${dayId}"]`);
+    assert.equal(await c.textContent(`[data-gw-players="${dayId}"]`), '1');
+    await c.evaluate(() => (document.querySelector('.gw-card').dataset.mark = 'same'));
+    const kolya = { id: 7603, first_name: 'Коля', language_code: 'ru' };
+    await demo.app.post('/api/bootstrap', { user: kolya });
+    await payStars(kolya, 100);
+    assert.equal((await demo.app.post(`/api/giveaways/${dayId}/join`, { user: kolya })).status, 200);
+    await c.clock.fastForward(10_000);
+    await c.waitForTimeout(500);
+    assert.equal(await c.textContent(`[data-gw-players="${dayId}"]`), '1', 'not yet: 30 s have not passed');
+    await c.clock.fastForward(21_000);
+    await c.waitForFunction((id) => document.querySelector(`[data-gw-players="${id}"]`).textContent === '2', dayId);
+    assert.equal(await c.evaluate(() => document.querySelector('.gw-card').dataset.mark), 'same', 'only the number changes, the page is not drawn again');
+    assert.deepEqual(e4, []);
+    await c.context().close();
+  }
 
   // a regular admin only looks
   {
@@ -3680,13 +3705,13 @@ test('giveaways (like on Case Battle): two tiles on the cases screen; the page �
   await b.waitForSelector('.toast.ok');
   assert.equal(await b.textContent('.toast.ok'), 'Сохранено');
   await b.waitForFunction(() => document.querySelector('.gw-adm[data-kind="week"] .gw-adm-now b')?.textContent.includes('Garama'));
-  // the daily one: Лена is in it, Гоша's win is in the past ones
+  // the daily one: Лена and Коля are in it, Гоша's win is in the past ones
   const dayAdm = b.locator('.gw-adm[data-kind="day"]');
-  assert.match(await dayAdm.locator('.gw-adm-now small').textContent(), /участников: 1/);
+  assert.match(await dayAdm.locator('.gw-adm-now small').textContent(), /участников: 2/);
   assert.match(await dayAdm.locator('.list .row').first().textContent(), /Гоша/);
   await dayAdm.locator('.gw-adm-now').click();
   await b.waitForSelector(`#gwEnt${dayId} .row`);
-  assert.match(await b.textContent(`#gwEnt${dayId}`), /Лена/);
+  assert.deepEqual(await b.$$eval(`#gwEnt${dayId} .row b`, (els) => els.map((e) => e.textContent)), ['Лена', 'Коля']);
   assert.deepEqual(e3, []);
   await b.context().close();
   const w = (await demo.app.get('/api/giveaways', { user: lena })).body.giveaways.find((x) => x.kind === 'week');
